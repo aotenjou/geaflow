@@ -49,5 +49,24 @@ public class GQLValidateGraphAlgorithmTest {
             .validate()
             .expectValidateType(
                 "RecordType(BIGINT id, DOUBLE ARRAY embedding, BIGINT predicted_class, DOUBLE confidence)");
+
+        String script4 = "CALL GCN(2, 25) YIELD (id, embedding, predicted_class, confidence)\n"
+            + "RETURN id, embedding, predicted_class, confidence";
+
+        PlanTester.build()
+            .gql(script4)
+            .validate()
+            .expectValidateType(
+                "RecordType(BIGINT id, DOUBLE ARRAY embedding, BIGINT predicted_class, DOUBLE confidence)");
+
+        String script5 = "CALL GCN(2, 25, 'GCNTransFormFunction') "
+            + "YIELD (id, embedding, predicted_class, confidence)\n"
+            + "RETURN id, embedding, predicted_class, confidence";
+
+        PlanTester.build()
+            .gql(script5)
+            .validate()
+            .expectValidateType(
+                "RecordType(BIGINT id, DOUBLE ARRAY embedding, BIGINT predicted_class, DOUBLE confidence)");
     }
 }
