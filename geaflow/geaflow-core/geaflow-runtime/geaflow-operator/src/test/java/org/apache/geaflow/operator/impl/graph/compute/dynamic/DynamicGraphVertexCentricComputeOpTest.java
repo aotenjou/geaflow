@@ -34,6 +34,7 @@ import org.apache.geaflow.api.graph.function.vc.VertexCentricCombineFunction;
 import org.apache.geaflow.collector.ICollector;
 import org.apache.geaflow.common.config.Configuration;
 import org.apache.geaflow.common.config.keys.ExecutionConfigKeys;
+import org.apache.geaflow.common.config.keys.FrameworkConfigKeys;
 import org.apache.geaflow.common.task.TaskArgs;
 import org.apache.geaflow.common.type.primitive.IntegerType;
 import org.apache.geaflow.common.utils.ReflectionUtil;
@@ -103,6 +104,21 @@ public class DynamicGraphVertexCentricComputeOpTest {
 
         Assert.assertEquals(3L, ReflectionUtil.getField(operator, "windowId"));
         Assert.assertEquals(3L, ((RuntimeContext) ReflectionUtil.getField(operator, "runtimeContext")).getWindowId());
+    }
+
+    @Test
+    public void testBuildInferConfigurationOverride() {
+        Configuration config = new Configuration();
+        config.put(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME, "GlobalTransform");
+        Configuration overridden = DynamicGraphVertexCentricComputeOp.buildInferConfiguration(config,
+            "AlgoTransform");
+        Assert.assertEquals(config.getString(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME),
+            "GlobalTransform");
+        Assert.assertEquals(overridden.getString(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME),
+            "AlgoTransform");
+
+        Configuration unchanged = DynamicGraphVertexCentricComputeOp.buildInferConfiguration(config, null);
+        Assert.assertSame(unchanged, config);
     }
 
     public class TestRuntimeContext extends AbstractRuntimeContext {

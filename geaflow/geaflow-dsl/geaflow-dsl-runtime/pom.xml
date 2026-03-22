@@ -112,6 +112,11 @@
         </dependency>
 
         <dependency>
+            <groupId>org.apache.geaflow</groupId>
+            <artifactId>geaflow-infer</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.testng</groupId>
             <artifactId>testng</artifactId>
         </dependency>

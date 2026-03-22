@@ -34,6 +34,7 @@ import org.apache.geaflow.dsl.common.data.RowEdge;
 import org.apache.geaflow.dsl.common.exception.GeaFlowDSLException;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
+import org.apache.geaflow.infer.InferContext;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
 import org.apache.geaflow.model.traversal.ITraversalResponse;
 import org.apache.geaflow.model.traversal.TraversalType.ResponseType;
@@ -51,6 +52,7 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
     private final GraphSchema graphSchema;
     private final TraversalEdgeQuery<Object, Row> edgeQuery;
     private final transient GeaFlowAlgorithmAggTraversalFunction traversalFunction;
+    private final InferContext<Object> inferContext;
     private Object vertexId;
 
     private long lastSendAggMsgIterationId = -1L;
@@ -59,11 +61,20 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
         GeaFlowAlgorithmAggTraversalFunction traversalFunction,
         VertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext,
         GraphSchema graphSchema) {
+        this(traversalFunction, traversalContext, graphSchema, null);
+    }
+
+    public GeaFlowAlgorithmRuntimeContext(
+        GeaFlowAlgorithmAggTraversalFunction traversalFunction,
+        VertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext,
+        GraphSchema graphSchema,
+        InferContext<Object> inferContext) {
         this.traversalFunction = traversalFunction;
         this.traversalContext = traversalContext;
         this.edgeQuery = traversalContext.edges();
         this.graphSchema = graphSchema;
         this.aggContext = null;
+        this.inferContext = inferContext;
     }
 
     public void setVertexId(Object vertexId) {
@@ -172,7 +183,9 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
     }
 
     public void close() {
-
+        if (inferContext != null) {
+            inferContext.close();
+        }
     }
 
     public long getCurrentIterationId() {
@@ -187,6 +200,19 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
     @Override
     public GraphSchema getGraphSchema() {
         return graphSchema;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <OUT> OUT infer(Object... modelInputs) {
+        if (inferContext == null) {
+            return AlgorithmRuntimeContext.super.infer(modelInputs);
+        }
+        try {
+            return (OUT) inferContext.infer(modelInputs);
+        } catch (Exception e) {
+            throw new GeaflowRuntimeException("model infer failed", e);
+        }
     }
 
     public VertexCentricAggContext<ITraversalAgg, ITraversalAgg> getAggContext() {

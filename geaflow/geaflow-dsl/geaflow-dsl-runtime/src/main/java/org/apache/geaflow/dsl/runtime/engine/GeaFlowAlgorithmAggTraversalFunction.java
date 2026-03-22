@@ -33,6 +33,7 @@ import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
+import org.apache.geaflow.infer.InferContext;
 import org.apache.geaflow.model.traversal.ITraversalRequest;
 import org.apache.geaflow.state.KeyValueState;
 import org.apache.geaflow.state.StateFactory;
@@ -73,7 +74,13 @@ public class GeaFlowAlgorithmAggTraversalFunction implements
     public void open(
         VertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> vertexCentricFuncContext) {
         this.traversalContext = vertexCentricFuncContext;
-        this.algorithmCtx = new GeaFlowAlgorithmRuntimeContext(this, traversalContext, graphSchema);
+        InferContext<Object> inferContext = null;
+        if (traversalContext.getRuntimeContext().getConfiguration().getBoolean(
+            org.apache.geaflow.common.config.keys.FrameworkConfigKeys.INFER_ENV_ENABLE)) {
+            inferContext = new InferContext<>(traversalContext.getRuntimeContext().getConfiguration());
+        }
+        this.algorithmCtx = new GeaFlowAlgorithmRuntimeContext(this, traversalContext, graphSchema,
+            inferContext);
         this.userFunction.init(algorithmCtx, params);
         this.invokeVIds = new HashSet<>();
         String stateName = traversalContext.getTraversalOpName() + "_" + STATE_SUFFIX;

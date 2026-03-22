@@ -37,6 +37,7 @@ import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
+import org.apache.geaflow.infer.InferContext;
 import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.graph.vertex.IVertex;
 import org.apache.geaflow.model.traversal.ITraversalRequest;
@@ -90,8 +91,13 @@ public class GeaFlowAlgorithmDynamicAggTraversalFunction
         IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> vertexCentricFuncContext) {
         this.traversalContext = vertexCentricFuncContext;
         this.materializeInFinish = traversalContext.getRuntimeContext().getConfiguration().getBoolean(FrameworkConfigKeys.UDF_MATERIALIZE_GRAPH_IN_FINISH);
+        InferContext<Object> inferContext = null;
+        if (traversalContext.getRuntimeContext().getConfiguration().getBoolean(
+            FrameworkConfigKeys.INFER_ENV_ENABLE)) {
+            inferContext = new InferContext<>(traversalContext.getRuntimeContext().getConfiguration());
+        }
         this.algorithmCtx = new GeaFlowAlgorithmDynamicRuntimeContext(this, traversalContext,
-            graphSchema);
+            graphSchema, inferContext);
         this.initVertices = new HashSet<>();
         this.userFunction.init(algorithmCtx, params);
         this.mutableGraph = traversalContext.getMutableGraph();

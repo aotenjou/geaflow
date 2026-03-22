@@ -32,6 +32,10 @@ public abstract class AbstractIncVertexCentricComputeAlgo<K, VV, EV, M,
         super(iterations, name);
     }
 
+    public String getPythonTransformClassName() {
+        return null;
+    }
+
     public abstract FUNC getIncComputeFunction();
 
 }

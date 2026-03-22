@@ -20,8 +20,10 @@
 package org.apache.geaflow.operator.impl.graph.compute.dynamic;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.apache.geaflow.api.function.iterator.RichIteratorFunction;
 import org.apache.geaflow.api.graph.base.algo.AbstractIncVertexCentricComputeAlgo;
@@ -164,7 +166,8 @@ public class DynamicGraphVertexCentricComputeOp<K, VV, EV, M, FUNC extends IncVe
         public IncGraphInferComputeContextImpl() {
             if (clientLocal.get() == null) {
                 try {
-                    inferContext = new InferContext<>(runtimeContext.getConfiguration());
+                    inferContext = new InferContext<>(buildInferConfiguration(runtimeContext.getConfiguration(),
+                        function.getPythonTransformClassName()));
                 } catch (Exception e) {
                     throw new GeaflowRuntimeException(e);
                 }
@@ -190,5 +193,17 @@ public class DynamicGraphVertexCentricComputeOp<K, VV, EV, M, FUNC extends IncVe
                 clientLocal.remove();
             }
         }
+    }
+
+    static Configuration buildInferConfiguration(Configuration baseConfig, String pythonTransformClassName) {
+        if (pythonTransformClassName == null || pythonTransformClassName.trim().isEmpty()) {
+            return baseConfig;
+        }
+        Map<String, String> configMap = new HashMap<>(baseConfig.getConfigMap());
+        configMap.put(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME.getKey(),
+            pythonTransformClassName);
+        Configuration configuration = new Configuration(configMap);
+        configuration.setMasterId(baseConfig.getMasterId());
+        return configuration;
     }
 }

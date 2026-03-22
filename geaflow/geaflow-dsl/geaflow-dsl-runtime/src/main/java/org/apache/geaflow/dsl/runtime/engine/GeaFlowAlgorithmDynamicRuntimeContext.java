@@ -28,6 +28,7 @@ import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunctio
 import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.TraversalEdgeQuery;
 import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.TraversalVertexQuery;
 import org.apache.geaflow.common.config.Configuration;
+import org.apache.geaflow.common.exception.GeaflowRuntimeException;
 import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.dsl.common.algo.AlgorithmRuntimeContext;
 import org.apache.geaflow.dsl.common.data.Row;
@@ -35,6 +36,7 @@ import org.apache.geaflow.dsl.common.data.RowEdge;
 import org.apache.geaflow.dsl.common.exception.GeaFlowDSLException;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
+import org.apache.geaflow.infer.InferContext;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
 import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.graph.vertex.IVertex;
@@ -59,6 +61,7 @@ public class GeaFlowAlgorithmDynamicRuntimeContext implements AlgorithmRuntimeCo
     protected TraversalEdgeQuery<Object, Row> edgeQuery;
 
     private final transient GeaFlowAlgorithmDynamicAggTraversalFunction traversalFunction;
+    private final InferContext<Object> inferContext;
 
     private Object vertexId;
 
@@ -66,12 +69,20 @@ public class GeaFlowAlgorithmDynamicRuntimeContext implements AlgorithmRuntimeCo
 
     public GeaFlowAlgorithmDynamicRuntimeContext(GeaFlowAlgorithmDynamicAggTraversalFunction traversalFunction,
                                                  IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext, GraphSchema graphSchema) {
+        this(traversalFunction, traversalContext, graphSchema, null);
+    }
+
+    public GeaFlowAlgorithmDynamicRuntimeContext(GeaFlowAlgorithmDynamicAggTraversalFunction traversalFunction,
+                                                 IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext,
+                                                 GraphSchema graphSchema,
+                                                 InferContext<Object> inferContext) {
         this.traversalFunction = traversalFunction;
         this.incVCTraversalCtx = traversalContext;
         this.graphSchema = graphSchema;
         TraversalGraphSnapShot<Object, Row, Row> graphSnapShot = incVCTraversalCtx.getHistoricalGraph().getSnapShot(0L);
         this.vertexQuery = graphSnapShot.vertex();
         this.edgeQuery = graphSnapShot.edges();
+        this.inferContext = inferContext;
     }
 
     public void setVertexId(Object vertexId) {
@@ -248,12 +259,27 @@ public class GeaFlowAlgorithmDynamicRuntimeContext implements AlgorithmRuntimeCo
     }
 
     public void close() {
-
+        if (inferContext != null) {
+            inferContext.close();
+        }
     }
 
     @Override
     public GraphSchema getGraphSchema() {
         return graphSchema;
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public <OUT> OUT infer(Object... modelInputs) {
+        if (inferContext == null) {
+            return AlgorithmRuntimeContext.super.infer(modelInputs);
+        }
+        try {
+            return (OUT) inferContext.infer(modelInputs);
+        } catch (Exception e) {
+            throw new GeaflowRuntimeException("model infer failed", e);
+        }
     }
 
     public VertexCentricAggContext<ITraversalAgg, ITraversalAgg> getAggContext() {

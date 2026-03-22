@@ -40,5 +40,14 @@ public class GQLValidateGraphAlgorithmTest {
             .validate()
             .expectValidateType(
                 "RecordType(BIGINT vid, BIGINT distance)");
+
+        String script3 = "CALL GCN() YIELD (id, embedding, predicted_class, confidence)\n"
+            + "RETURN id, embedding, predicted_class, confidence";
+
+        PlanTester.build()
+            .gql(script3)
+            .validate()
+            .expectValidateType(
+                "RecordType(BIGINT id, DOUBLE ARRAY embedding, BIGINT predicted_class, DOUBLE confidence)");
     }
 }

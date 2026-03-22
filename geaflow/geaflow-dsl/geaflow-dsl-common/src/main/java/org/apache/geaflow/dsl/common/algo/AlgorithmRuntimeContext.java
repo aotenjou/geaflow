@@ -152,6 +152,13 @@ public interface AlgorithmRuntimeContext<K, M> {
     Configuration getConfig();
 
     /**
+     * Invoke model inference when runtime infer support is enabled.
+     */
+    default <OUT> OUT infer(Object... modelInputs) {
+        throw new UnsupportedOperationException("Inference is not enabled. Set INFER_ENV_ENABLE=true to enable inference.");
+    }
+
+    /**
      * Sends a termination vote to the coordinator to signal algorithm completion.
      * This method allows vertices to vote for algorithm termination when they
      * determine that no further computation is needed.
