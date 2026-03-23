@@ -23,8 +23,10 @@ import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.apache.geaflow.common.binary.BinaryString;
@@ -43,12 +45,12 @@ public class GCNComponentsTest {
     @Test
     public void testResultParserMap() {
         GCNResultParser parser = new GCNResultParser();
-        GCNInferResult result = parser.parse(1L, Map.of(
-            "node_id", 1L,
-            "embedding", List.of(0.1D, 0.2D),
-            "prediction", 2,
-            "confidence", 0.9D
-        ));
+        Map<String, Object> rawResult = new HashMap<>();
+        rawResult.put("node_id", 1L);
+        rawResult.put("embedding", Arrays.asList(0.1D, 0.2D));
+        rawResult.put("prediction", 2);
+        rawResult.put("confidence", 0.9D);
+        GCNInferResult result = parser.parse(1L, rawResult);
         assertEquals(result.getNodeId(), 1L);
         assertEquals(result.getPredictedClass(), 2L);
         assertEquals(result.getConfidence(), 0.9D);
@@ -59,7 +61,7 @@ public class GCNComponentsTest {
     public void testResultParserListArrayNullAndPythonException() {
         GCNResultParser parser = new GCNResultParser();
 
-        GCNInferResult listResult = parser.parse(1L, List.of(List.of(1.0D, 2.0D), 3, 0.5D));
+        GCNInferResult listResult = parser.parse(1L, Arrays.asList(Arrays.asList(1.0D, 2.0D), 3, 0.5D));
         assertEquals(listResult.getNodeId(), 1L);
         assertEquals(listResult.getEmbedding(), new double[]{1.0D, 2.0D});
         assertEquals(listResult.getPredictedClass(), 3L);
@@ -88,7 +90,7 @@ public class GCNComponentsTest {
     public void testFeatureCollectorSupportsMultipleInputShapes() {
         GCNFeatureCollector collector = new GCNFeatureCollector();
 
-        assertEquals(collector.collectFromValue(List.of(1, 2, 3), 5),
+        assertEquals(collector.collectFromValue(Arrays.asList(1, 2, 3), 5),
             new double[]{1D, 2D, 3D, 0D, 0D});
         assertEquals(collector.collectFromValue(new Object[]{1, "2.5"}, 4),
             new double[]{1D, 2.5D, 0D, 0D});
@@ -102,8 +104,8 @@ public class GCNComponentsTest {
 
     @Test
     public void testFeatureCollectorFromRowVertexHonorsSchemaAndPads() {
-        GraphSchema graphSchema = new GraphSchema("g", List.of(
-            new TableField("person", new VertexType(List.of(
+        GraphSchema graphSchema = new GraphSchema("g", Collections.singletonList(
+            new TableField("person", new VertexType(Arrays.asList(
                 new TableField("~id", Types.LONG, false),
                 new TableField("~label", Types.STRING, false),
                 new TableField("f0", Types.INTEGER, true),

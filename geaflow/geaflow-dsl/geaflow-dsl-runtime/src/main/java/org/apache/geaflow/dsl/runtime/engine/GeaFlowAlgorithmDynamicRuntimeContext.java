@@ -21,7 +21,6 @@ package org.apache.geaflow.dsl.runtime.engine;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import org.apache.geaflow.api.graph.function.aggregate.VertexCentricAggContextFunction.VertexCentricAggContext;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunction.IncVertexCentricTraversalFuncContext;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunction.TraversalGraphSnapShot;
@@ -287,7 +286,10 @@ public class GeaFlowAlgorithmDynamicRuntimeContext implements AlgorithmRuntimeCo
     }
 
     public void setAggContext(VertexCentricAggContext<ITraversalAgg, ITraversalAgg> aggContext) {
-        this.aggContext = Objects.requireNonNull(aggContext);
+        if (aggContext == null) {
+            throw new NullPointerException("aggContext");
+        }
+        this.aggContext = aggContext;
     }
 
     public IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> getIncVCTraversalCtx() {

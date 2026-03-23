@@ -56,7 +56,9 @@ public class GCNSubgraphBuilder {
                 for (int i = 0; i < sampleSize; i++) {
                     Object neighborId = neighbors.get(i);
                     nextFrontier.add(neighborId);
-                    nodeFeatures.computeIfAbsent(neighborId, adapter::loadFeatures);
+                    if (!nodeFeatures.containsKey(neighborId)) {
+                        nodeFeatures.put(neighborId, adapter.loadFeatures(neighborId));
+                    }
                     edges.add(new int[]{indexOf(nodeFeatures, nodeId), indexOf(nodeFeatures, neighborId)});
                 }
             }

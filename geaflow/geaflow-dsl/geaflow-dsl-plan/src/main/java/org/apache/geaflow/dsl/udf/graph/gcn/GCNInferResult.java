@@ -20,7 +20,6 @@
 package org.apache.geaflow.dsl.udf.graph.gcn;
 
 import java.io.Serializable;
-import java.util.Arrays;
 
 public class GCNInferResult implements Serializable {
 
@@ -53,7 +52,10 @@ public class GCNInferResult implements Serializable {
     }
 
     public Object[] toRowValues() {
-        Double[] boxedEmbedding = Arrays.stream(embedding).boxed().toArray(Double[]::new);
+        Double[] boxedEmbedding = new Double[embedding.length];
+        for (int i = 0; i < embedding.length; i++) {
+            boxedEmbedding[i] = embedding[i];
+        }
         return new Object[]{nodeId, boxedEmbedding, predictedClass, confidence};
     }
 }

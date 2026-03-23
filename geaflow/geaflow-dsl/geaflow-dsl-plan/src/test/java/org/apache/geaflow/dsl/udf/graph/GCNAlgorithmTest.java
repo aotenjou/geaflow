@@ -25,6 +25,7 @@ import static org.testng.Assert.assertTrue;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -72,12 +73,12 @@ public class GCNAlgorithmTest {
         context.addVertex(3L, new TestRowVertex(3L, ObjectRow.create(5, 6D)));
         context.addEdge(1L, new TestRowEdge(1L, 2L));
         context.addEdge(1L, new TestRowEdge(1L, 3L));
-        context.inferResult = Map.of(
-            "node_id", 1L,
-            "embedding", List.of(0.1D, 0.2D),
-            "prediction", 7L,
-            "confidence", 0.8D
-        );
+        Map<String, Object> inferResult = new HashMap<>();
+        inferResult.put("node_id", 1L);
+        inferResult.put("embedding", Arrays.asList(0.1D, 0.2D));
+        inferResult.put("prediction", 7L);
+        inferResult.put("confidence", 0.8D);
+        context.inferResult = inferResult;
 
         GCN gcn = new GCN();
         gcn.init(context, new Object[0]);
@@ -89,7 +90,7 @@ public class GCNAlgorithmTest {
         assertEquals(row.getFields()[3], 0.8D);
         assertNotNull(context.capturedPayload);
         assertEquals(context.capturedPayload.getCenter_node_id(), 1L);
-        assertTrue(context.capturedPayload.getSampled_nodes().containsAll(List.of(1L, 2L, 3L)));
+        assertTrue(context.capturedPayload.getSampled_nodes().containsAll(Arrays.asList(1L, 2L, 3L)));
     }
 
     @Test
@@ -124,15 +125,15 @@ public class GCNAlgorithmTest {
         GCNCompute.GCNComputeFunction function = new GCNCompute.GCNComputeFunction(
             new GCNConfig(1, 2, GCNConfig.DEFAULT_PYTHON_TRANSFORM_CLASS));
         TestIncGraphContext context = new TestIncGraphContext();
-        context.addVertex(1L, new ValueVertex<>(1L, List.of(1D, 2D)));
-        context.addVertex(2L, new ValueVertex<>(2L, List.of(3D, 4D)));
-        context.addVertex(3L, new ValueVertex<>(3L, List.of(5D, 6D)));
-        context.addEdges(1L, List.of(new TestEdge(1L, 2L), new TestEdge(1L, 3L)));
-        context.inferResult = Map.of(
-            "embedding", List.of(0.3D, 0.4D),
-            "predicted_class", 9L,
-            "confidence", 0.95D
-        );
+        context.addVertex(1L, new ValueVertex<Object, List<Object>>(1L, Arrays.<Object>asList(1D, 2D)));
+        context.addVertex(2L, new ValueVertex<Object, List<Object>>(2L, Arrays.<Object>asList(3D, 4D)));
+        context.addVertex(3L, new ValueVertex<Object, List<Object>>(3L, Arrays.<Object>asList(5D, 6D)));
+        context.addEdges(1L, Arrays.<IEdge<Object, Object>>asList(new TestEdge(1L, 2L), new TestEdge(1L, 3L)));
+        Map<String, Object> inferResult = new HashMap<>();
+        inferResult.put("embedding", Arrays.asList(0.3D, 0.4D));
+        inferResult.put("predicted_class", 9L);
+        inferResult.put("confidence", 0.95D);
+        context.inferResult = inferResult;
 
         function.init(context);
         function.evolve(1L, new TestTemporaryGraph(context.vertices.get(1L)));
@@ -149,15 +150,15 @@ public class GCNAlgorithmTest {
         GCNCompute.GCNComputeFunction function = new GCNCompute.GCNComputeFunction(
             new GCNConfig(1, 1, GCNConfig.DEFAULT_PYTHON_TRANSFORM_CLASS));
         NonInferIncGraphContext context = new NonInferIncGraphContext();
-        context.addVertex(1L, new ValueVertex<>(1L, List.of(1D, 2D)));
+        context.addVertex(1L, new ValueVertex<Object, List<Object>>(1L, Arrays.<Object>asList(1D, 2D)));
 
         function.init(context);
         function.evolve(1L, new TestTemporaryGraph(context.getVertex(1L)));
     }
 
     private static GraphSchema buildGraphSchema() {
-        return new GraphSchema("g", List.of(
-            new TableField("person", new VertexType(List.of(
+        return new GraphSchema("g", Collections.singletonList(
+            new TableField("person", new VertexType(Arrays.asList(
                 new TableField("~id", Types.LONG, false),
                 new TableField("~label", Types.STRING, false),
                 new TableField("f0", Types.INTEGER, true),
@@ -184,7 +185,12 @@ public class GCNAlgorithmTest {
         }
 
         void addEdge(Object nodeId, RowEdge edge) {
-            edges.computeIfAbsent(nodeId, key -> new ArrayList<>()).add(edge);
+            List<RowEdge> rowEdges = edges.get(nodeId);
+            if (rowEdges == null) {
+                rowEdges = new ArrayList<>();
+                edges.put(nodeId, rowEdges);
+            }
+            rowEdges.add(edge);
         }
 
         public void setVertexId(Object vertexId) {
@@ -412,7 +418,7 @@ public class GCNAlgorithmTest {
 
                 @Override
                 public List<Long> getAllVersionIds() {
-                    return List.of(1L);
+                    return Collections.singletonList(1L);
                 }
 
                 @Override
