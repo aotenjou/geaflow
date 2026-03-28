@@ -19,6 +19,10 @@
 
 package org.apache.geaflow.dsl.udf.graph;
 
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertNotNull;
 import static org.testng.Assert.assertTrue;
@@ -28,9 +32,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.geaflow.api.context.RuntimeContext;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricComputeFunction.IncGraphComputeContext;
 import org.apache.geaflow.api.graph.function.vc.base.IncGraphInferContext;
@@ -42,10 +48,12 @@ import org.apache.geaflow.api.graph.function.vc.base.VertexCentricFunction.EdgeQ
 import org.apache.geaflow.api.graph.function.vc.base.VertexCentricFunction.VertexQuery;
 import org.apache.geaflow.common.binary.BinaryString;
 import org.apache.geaflow.common.config.Configuration;
+import org.apache.geaflow.common.config.keys.FrameworkConfigKeys;
 import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.common.type.IType;
 import org.apache.geaflow.common.type.Types;
 import org.apache.geaflow.dsl.common.algo.AlgorithmRuntimeContext;
+import org.apache.geaflow.dsl.common.algo.DynamicVertexRuntimeContext;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowEdge;
 import org.apache.geaflow.dsl.common.data.RowVertex;
@@ -55,6 +63,7 @@ import org.apache.geaflow.dsl.common.types.TableField;
 import org.apache.geaflow.dsl.common.types.VertexType;
 import org.apache.geaflow.dsl.udf.graph.gcn.GCNConfig;
 import org.apache.geaflow.dsl.udf.graph.gcn.GCNInferPayload;
+import org.apache.geaflow.infer.InferContext;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
 import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.graph.vertex.IVertex;
@@ -71,8 +80,8 @@ public class GCNAlgorithmTest {
         context.addVertex(1L, new TestRowVertex(1L, ObjectRow.create(1, 2D)));
         context.addVertex(2L, new TestRowVertex(2L, ObjectRow.create(3, 4D)));
         context.addVertex(3L, new TestRowVertex(3L, ObjectRow.create(5, 6D)));
-        context.addEdge(1L, new TestRowEdge(1L, 2L));
-        context.addEdge(1L, new TestRowEdge(1L, 3L));
+        context.addEdge(1L, new TestRowEdge(1L, 2L).withRowValue(ObjectRow.create(2.5D)));
+        context.addEdge(1L, new TestRowEdge(1L, 3L).withRowValue(ObjectRow.create(0.75D)));
         Map<String, Object> inferResult = new HashMap<>();
         inferResult.put("node_id", 1L);
         inferResult.put("embedding", Arrays.asList(0.1D, 0.2D));
@@ -91,6 +100,11 @@ public class GCNAlgorithmTest {
         assertNotNull(context.capturedPayload);
         assertEquals(context.capturedPayload.getCenter_node_id(), 1L);
         assertTrue(context.capturedPayload.getSampled_nodes().containsAll(Arrays.asList(1L, 2L, 3L)));
+        assertEdgePairsEqualIgnoreOrder(context.capturedPayload, new Object[][]{
+            {1L, 2L}, {2L, 1L}, {1L, 3L}, {3L, 1L}, {1L, 1L}, {2L, 2L}, {3L, 3L}
+        });
+        assertEdgeWeightsEqualIgnoreOrder(context.capturedPayload.getEdge_weight(),
+            new double[]{2.5D, 2.5D, 0.75D, 0.75D, 1.0D, 1.0D, 1.0D});
     }
 
     @Test
@@ -121,6 +135,72 @@ public class GCNAlgorithmTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void testGCNUsesDedicatedInferContextWhenTransformOverridesGlobalConfig() throws Exception {
+        TestAlgorithmRuntimeContext context = new TestAlgorithmRuntimeContext();
+        context.getConfig().put(FrameworkConfigKeys.INFER_ENV_ENABLE.getKey(), "true");
+        context.getConfig().put(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME,
+            "GlobalTransform");
+        context.addVertex(1L, new TestRowVertex(1L, ObjectRow.create(1, 2D)));
+        context.addVertex(2L, new TestRowVertex(2L, ObjectRow.create(3, 4D)));
+        context.addEdge(1L, new TestRowEdge(1L, 2L));
+
+        InferContext<Object> inferContext = mock(InferContext.class);
+        Map<String, Object> localInferResult = new HashMap<>();
+        localInferResult.put("node_id", 1L);
+        localInferResult.put("embedding", Arrays.asList(9.0D, 8.0D));
+        localInferResult.put("predicted_class", 6L);
+        localInferResult.put("confidence", 0.6D);
+        when(inferContext.infer((Object) any())).thenReturn(localInferResult);
+
+        TestableGCN gcn = new TestableGCN(inferContext);
+        gcn.init(context, new Object[]{1, 1, "PerCallTransform"});
+        gcn.process(context.vertices.get(1L), java.util.Optional.empty(), Collections.emptyIterator());
+        gcn.finish(context.vertices.get(1L), java.util.Optional.empty());
+
+        ObjectRow row = (ObjectRow) context.takenRows.get(0);
+        assertEquals(row.getFields()[2], 6L);
+        assertEquals(context.inferCallCount, 0);
+        assertNotNull(gcn.createdInferConfig);
+        assertEquals(gcn.createdInferConfig.getString(
+            FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME.getKey()),
+            "PerCallTransform");
+        verify(inferContext).close();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testGCNUsesDedicatedInferContextWhenGlobalTransformIsAbsent() throws Exception {
+        TestAlgorithmRuntimeContext context = new TestAlgorithmRuntimeContext();
+        context.getConfig().put(FrameworkConfigKeys.INFER_ENV_ENABLE.getKey(), "true");
+        context.addVertex(1L, new TestRowVertex(1L, ObjectRow.create(1, 2D)));
+        context.addVertex(2L, new TestRowVertex(2L, ObjectRow.create(3, 4D)));
+        context.addEdge(1L, new TestRowEdge(1L, 2L));
+
+        InferContext<Object> inferContext = mock(InferContext.class);
+        Map<String, Object> localInferResult = new HashMap<>();
+        localInferResult.put("node_id", 1L);
+        localInferResult.put("embedding", Arrays.asList(5.0D, 4.0D));
+        localInferResult.put("predicted_class", 3L);
+        localInferResult.put("confidence", 0.7D);
+        when(inferContext.infer((Object) any())).thenReturn(localInferResult);
+
+        TestableGCN gcn = new TestableGCN(inferContext);
+        gcn.init(context, new Object[]{1, 1, "PerCallTransform"});
+        gcn.process(context.vertices.get(1L), java.util.Optional.empty(), Collections.emptyIterator());
+        gcn.finish(context.vertices.get(1L), java.util.Optional.empty());
+
+        ObjectRow row = (ObjectRow) context.takenRows.get(0);
+        assertEquals(row.getFields()[2], 3L);
+        assertEquals(context.inferCallCount, 0);
+        assertNotNull(gcn.createdInferConfig);
+        assertEquals(gcn.createdInferConfig.getString(
+            FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME.getKey()),
+            "PerCallTransform");
+        verify(inferContext).close();
+    }
+
+    @Test
     public void testGCNComputeFunctionCollectsVertexResult() {
         GCNCompute.GCNComputeFunction function = new GCNCompute.GCNComputeFunction(
             new GCNConfig(1, 2, GCNConfig.DEFAULT_PYTHON_TRANSFORM_CLASS));
@@ -128,7 +208,9 @@ public class GCNAlgorithmTest {
         context.addVertex(1L, new ValueVertex<Object, List<Object>>(1L, Arrays.<Object>asList(1D, 2D)));
         context.addVertex(2L, new ValueVertex<Object, List<Object>>(2L, Arrays.<Object>asList(3D, 4D)));
         context.addVertex(3L, new ValueVertex<Object, List<Object>>(3L, Arrays.<Object>asList(5D, 6D)));
-        context.addEdges(1L, Arrays.<IEdge<Object, Object>>asList(new TestEdge(1L, 2L), new TestEdge(1L, 3L)));
+        context.addEdges(1L, Arrays.<IEdge<Object, Object>>asList(
+            new TestEdge(1L, 2L, 2.5D),
+            new TestEdge(1L, 3L, 0.75D)));
         Map<String, Object> inferResult = new HashMap<>();
         inferResult.put("embedding", Arrays.asList(0.3D, 0.4D));
         inferResult.put("predicted_class", 9L);
@@ -143,6 +225,12 @@ public class GCNAlgorithmTest {
         assertEquals(((double[]) collected.getValue().get(0)), new double[]{0.3D, 0.4D});
         assertEquals(collected.getValue().get(1), 9L);
         assertEquals(collected.getValue().get(2), 0.95D);
+        assertNotNull(context.capturedPayload);
+        assertEdgePairsEqualIgnoreOrder(context.capturedPayload, new Object[][]{
+            {1L, 2L}, {2L, 1L}, {1L, 3L}, {3L, 1L}, {1L, 1L}, {2L, 2L}, {3L, 3L}
+        });
+        assertEdgeWeightsEqualIgnoreOrder(context.capturedPayload.getEdge_weight(),
+            new double[]{2.5D, 2.5D, 0.75D, 0.75D, 1.0D, 1.0D, 1.0D});
     }
 
     @Test(expectedExceptions = IllegalStateException.class)
@@ -167,12 +255,44 @@ public class GCNAlgorithmTest {
         ));
     }
 
-    private static class TestAlgorithmRuntimeContext implements AlgorithmRuntimeContext<Object, Object> {
+    private static void assertEdgeWeightsEqualIgnoreOrder(double[] actual, double[] expected) {
+        double[] actualCopy = Arrays.copyOf(actual, actual.length);
+        double[] expectedCopy = Arrays.copyOf(expected, expected.length);
+        Arrays.sort(actualCopy);
+        Arrays.sort(expectedCopy);
+        assertEquals(actualCopy, expectedCopy);
+    }
+
+    private static void assertEdgePairsEqualIgnoreOrder(GCNInferPayload payload, Object[][] expectedPairs) {
+        Set<String> actual = toEdgePairs(payload.getSampled_nodes(), payload.getEdge_index());
+        Set<String> expected = new HashSet<>();
+        for (Object[] expectedPair : expectedPairs) {
+            expected.add(String.valueOf(expectedPair[0]) + "->" + String.valueOf(expectedPair[1]));
+        }
+        assertEquals(actual, expected);
+    }
+
+    private static Set<String> toEdgePairs(List<Object> sampledNodes, int[][] edgeIndex) {
+        Set<String> edgePairs = new HashSet<>();
+        if (edgeIndex == null || edgeIndex.length < 2) {
+            return edgePairs;
+        }
+        int edgeCount = Math.min(edgeIndex[0].length, edgeIndex[1].length);
+        for (int i = 0; i < edgeCount; i++) {
+            Object src = sampledNodes.get(edgeIndex[0][i]);
+            Object dst = sampledNodes.get(edgeIndex[1][i]);
+            edgePairs.add(String.valueOf(src) + "->" + String.valueOf(dst));
+        }
+        return edgePairs;
+    }
+
+    private static class TestAlgorithmRuntimeContext implements DynamicVertexRuntimeContext<Object, Object> {
 
         private final Map<Object, TestRowVertex> vertices = new HashMap<>();
         private final Map<Object, List<RowEdge>> edges = new HashMap<>();
         private final List<Row> takenRows = new ArrayList<>();
         private final GraphSchema graphSchema = buildGraphSchema();
+        private final Configuration config = new Configuration();
         private Object currentVertexId;
         private long iterationId = 1L;
         private int inferCallCount;
@@ -229,7 +349,7 @@ public class GCNAlgorithmTest {
 
         @Override
         public Configuration getConfig() {
-            return new Configuration();
+            return config;
         }
 
         @Override
@@ -384,6 +504,7 @@ public class GCNAlgorithmTest {
         private final Map<Object, List<IEdge<Object, Object>>> edges = new HashMap<>();
         private IVertex<Object, List<Object>> collectedVertex;
         private Object inferResult;
+        private GCNInferPayload capturedPayload;
 
         void addVertex(Object id, IVertex<Object, List<Object>> vertex) {
             vertices.put(id, vertex);
@@ -405,6 +526,7 @@ public class GCNAlgorithmTest {
         @Override
         @SuppressWarnings("unchecked")
         public Object infer(Object... modelInputs) {
+            capturedPayload = (GCNInferPayload) modelInputs[0];
             return inferResult;
         }
 
@@ -737,6 +859,11 @@ public class GCNAlgorithmTest {
             this.targetId = targetId;
         }
 
+        private TestRowEdge withRowValue(Row rowValue) {
+            this.value = rowValue;
+            return this;
+        }
+
         @Override
         public void setValue(Row value) {
             this.value = value;
@@ -829,10 +956,16 @@ public class GCNAlgorithmTest {
 
         private Object srcId;
         private Object targetId;
+        private Object value;
 
         private TestEdge(Object srcId, Object targetId) {
+            this(srcId, targetId, null);
+        }
+
+        private TestEdge(Object srcId, Object targetId, Object value) {
             this.srcId = srcId;
             this.targetId = targetId;
+            this.value = value;
         }
 
         @Override
@@ -866,17 +999,34 @@ public class GCNAlgorithmTest {
 
         @Override
         public Object getValue() {
-            return null;
+            return value;
         }
 
         @Override
         public IEdge<Object, Object> withValue(Object value) {
+            this.value = value;
             return this;
         }
 
         @Override
         public IEdge<Object, Object> reverse() {
             return new TestEdge(targetId, srcId);
+        }
+    }
+
+    private static final class TestableGCN extends GCN {
+
+        private final InferContext<Object> inferContext;
+        private Configuration createdInferConfig;
+
+        private TestableGCN(InferContext<Object> inferContext) {
+            this.inferContext = inferContext;
+        }
+
+        @Override
+        protected InferContext<Object> createInferContext(Configuration configuration) {
+            this.createdInferConfig = configuration;
+            return inferContext;
         }
     }
 }

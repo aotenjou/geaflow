@@ -31,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import org.apache.geaflow.api.function.iterator.RichIteratorFunction;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricAggTraversalFunction;
+import org.apache.geaflow.common.config.InferConfigHelper;
 import org.apache.geaflow.common.config.keys.FrameworkConfigKeys;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
 import org.apache.geaflow.dsl.common.data.Row;
@@ -93,7 +94,9 @@ public class GeaFlowAlgorithmDynamicAggTraversalFunction
         this.materializeInFinish = traversalContext.getRuntimeContext().getConfiguration().getBoolean(FrameworkConfigKeys.UDF_MATERIALIZE_GRAPH_IN_FINISH);
         InferContext<Object> inferContext = null;
         if (traversalContext.getRuntimeContext().getConfiguration().getBoolean(
-            FrameworkConfigKeys.INFER_ENV_ENABLE)) {
+            FrameworkConfigKeys.INFER_ENV_ENABLE)
+            && InferConfigHelper.hasTransformClassName(
+            traversalContext.getRuntimeContext().getConfiguration())) {
             inferContext = new InferContext<>(traversalContext.getRuntimeContext().getConfiguration());
         }
         this.algorithmCtx = new GeaFlowAlgorithmDynamicRuntimeContext(this, traversalContext,

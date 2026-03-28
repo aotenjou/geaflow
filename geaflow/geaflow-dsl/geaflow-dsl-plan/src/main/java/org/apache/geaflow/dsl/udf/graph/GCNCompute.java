@@ -29,6 +29,7 @@ import org.apache.geaflow.api.graph.compute.IncVertexCentricCompute;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricComputeFunction;
 import org.apache.geaflow.api.graph.function.vc.VertexCentricCombineFunction;
 import org.apache.geaflow.api.graph.function.vc.base.IncGraphInferContext;
+import org.apache.geaflow.dsl.udf.graph.gcn.AbstractGCNSubgraphAdapter;
 import org.apache.geaflow.dsl.udf.graph.gcn.GCNConfig;
 import org.apache.geaflow.dsl.udf.graph.gcn.GCNFeatureCollector;
 import org.apache.geaflow.dsl.udf.graph.gcn.GCNInferPayload;
@@ -122,32 +123,21 @@ public class GCNCompute extends IncVertexCentricCompute<Object, List<Object>, Ob
             graphContext.collect(new ValueVertex<>(rootId, value));
         }
 
-        private class ApiGraphAdapter implements GCNSubgraphBuilder.GraphAdapter {
-
-            private final Object rootId;
-            private final IVertex<Object, List<Object>> rootVertex;
+        private class ApiGraphAdapter extends AbstractGCNSubgraphAdapter<IVertex<Object, List<Object>>> {
 
             ApiGraphAdapter(Object rootId, IVertex<Object, List<Object>> rootVertex) {
-                this.rootId = rootId;
-                this.rootVertex = rootVertex;
+                super(rootId, rootVertex, config.getFeatureDimLimit());
             }
 
             @Override
-            public List<Object> loadNeighbors(Object nodeId) {
+            protected List<? extends IEdge<Object, ?>> loadEdges(Object nodeId) {
                 Object query = graphContext.getHistoricalGraph()
                     .getSnapShot(graphContext.getHistoricalGraph().getLatestVersionId()).edges();
                 try {
                     Method withId = query.getClass().getMethod("withId", Object.class);
                     withId.invoke(query, nodeId);
                     Method getEdges = query.getClass().getMethod("getEdges");
-                    List<IEdge<Object, Object>> edges = (List<IEdge<Object, Object>>) getEdges.invoke(query);
-                    List<Object> neighbors = new ArrayList<>(edges.size());
-                    for (IEdge<Object, Object> edge : edges) {
-                        Object neighborId = nodeId.equals(edge.getSrcId()) ? edge.getTargetId()
-                            : edge.getSrcId();
-                        neighbors.add(neighborId);
-                    }
-                    return neighbors;
+                    return (List<IEdge<Object, Object>>) getEdges.invoke(query);
                 } catch (NoSuchMethodException e) {
                     return Collections.emptyList();
                 } catch (IllegalAccessException | InvocationTargetException e) {
@@ -156,13 +146,15 @@ public class GCNCompute extends IncVertexCentricCompute<Object, List<Object>, Ob
             }
 
             @Override
-            public double[] loadFeatures(Object nodeId) {
-                IVertex<Object, List<Object>> vertex = rootId.equals(nodeId) ? rootVertex
-                    : graphContext.getHistoricalGraph().getSnapShot(
-                        graphContext.getHistoricalGraph().getLatestVersionId())
+            protected IVertex<Object, List<Object>> loadNode(Object nodeId) {
+                return graphContext.getHistoricalGraph().getSnapShot(
+                    graphContext.getHistoricalGraph().getLatestVersionId())
                     .vertex().withId(nodeId).get();
-                return vertex == null ? new double[config.getFeatureDimLimit()]
-                    : featureCollector.collectFromValue(vertex.getValue(), config.getFeatureDimLimit());
+            }
+
+            @Override
+            protected double[] extractFeatures(IVertex<Object, List<Object>> vertex) {
+                return featureCollector.collectFromValue(vertex.getValue(), config.getFeatureDimLimit());
             }
         }
     }

@@ -50,14 +50,14 @@ class EmptyGCNModel(nn.Module):
         self.embedding_proj = nn.Linear(hidden_dim, embedding_dim)
         self.classifier = nn.Linear(embedding_dim, num_classes)
 
-    def forward(self, node_features, edge_index):
-        hidden = self._aggregate(node_features, edge_index)
+    def forward(self, node_features, edge_index, edge_weight=None):
+        hidden = self._aggregate(node_features, edge_index, edge_weight)
         hidden = F.relu(self.input_proj(hidden))
-        embedding = self.embedding_proj(self._aggregate(hidden, edge_index))
+        embedding = self.embedding_proj(self._aggregate(hidden, edge_index, edge_weight))
         logits = self.classifier(embedding)
         return embedding, logits
 
-    def _aggregate(self, features, edge_index):
+    def _aggregate(self, features, edge_index, edge_weight=None):
         if edge_index is None or edge_index.numel() == 0:
             return features
         num_nodes = features.size(0)
@@ -70,8 +70,11 @@ class EmptyGCNModel(nn.Module):
             dst = int(dst_index[idx].item())
             if src < 0 or src >= num_nodes or dst < 0 or dst >= num_nodes:
                 continue
-            aggregated[dst] = aggregated[dst] + features[src]
-            degree[dst] = degree[dst] + 1.0
+            weight = 1.0
+            if edge_weight is not None and idx < edge_weight.size(0):
+                weight = float(edge_weight[idx].item())
+            aggregated[dst] = aggregated[dst] + weight * features[src]
+            degree[dst] = degree[dst] + weight
         degree = torch.clamp(degree, min=1.0)
         return aggregated / degree
 
@@ -127,13 +130,16 @@ class GCNTransFormFunction(TransFormFunction):
                                          ["getNode_features", "getNodeFeatures"])
         edge_index = self._read_value(payload, ["edge_index", "edgeIndex"],
                                       ["getEdge_index", "getEdgeIndex"])
+        edge_weight = self._read_value(payload, ["edge_weight", "edgeWeight"],
+                                       ["getEdge_weight", "getEdgeWeight"])
 
         feature_tensor = self._build_feature_tensor(node_features)
         edge_tensor = self._build_edge_tensor(edge_index, feature_tensor.size(0))
+        edge_weight_tensor = self._build_edge_weight_tensor(edge_weight, edge_tensor.size(1))
         self._ensure_model(feature_tensor.size(1))
 
         with torch.no_grad():
-            embedding_matrix, logits = self.model(feature_tensor, edge_tensor)
+            embedding_matrix, logits = self.model(feature_tensor, edge_tensor, edge_weight_tensor)
 
         center_index = self._find_center_index(sampled_nodes, center_node_id)
         center_embedding = embedding_matrix[center_index]
@@ -208,6 +214,18 @@ class GCNTransFormFunction(TransFormFunction):
             return torch.zeros((2, 0), dtype=torch.long, device=self.device)
         edge_tensor = torch.tensor(edges, dtype=torch.long, device=self.device)
         return edge_tensor.t().contiguous()
+
+    def _build_edge_weight_tensor(self, edge_weight, num_edges):
+        if num_edges == 0:
+            return torch.zeros((0,), dtype=torch.float32, device=self.device)
+        if edge_weight is None:
+            return None
+        values = list(edge_weight)
+        normalized_weights = []
+        for idx in range(num_edges):
+            value = values[idx] if idx < len(values) else 1.0
+            normalized_weights.append(float(1.0 if value is None else value))
+        return torch.tensor(normalized_weights, dtype=torch.float32, device=self.device)
 
     def _find_center_index(self, sampled_nodes, center_node_id):
         if sampled_nodes is None or len(sampled_nodes) == 0:

@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import org.apache.geaflow.api.graph.function.vc.VertexCentricAggTraversalFunction;
+import org.apache.geaflow.common.config.InferConfigHelper;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowVertex;
@@ -76,7 +77,9 @@ public class GeaFlowAlgorithmAggTraversalFunction implements
         this.traversalContext = vertexCentricFuncContext;
         InferContext<Object> inferContext = null;
         if (traversalContext.getRuntimeContext().getConfiguration().getBoolean(
-            org.apache.geaflow.common.config.keys.FrameworkConfigKeys.INFER_ENV_ENABLE)) {
+            org.apache.geaflow.common.config.keys.FrameworkConfigKeys.INFER_ENV_ENABLE)
+            && InferConfigHelper.hasTransformClassName(
+            traversalContext.getRuntimeContext().getConfiguration())) {
             inferContext = new InferContext<>(traversalContext.getRuntimeContext().getConfiguration());
         }
         this.algorithmCtx = new GeaFlowAlgorithmRuntimeContext(this, traversalContext, graphSchema,

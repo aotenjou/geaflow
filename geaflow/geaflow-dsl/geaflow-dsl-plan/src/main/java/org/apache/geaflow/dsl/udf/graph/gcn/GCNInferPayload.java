@@ -43,7 +43,15 @@ public class GCNInferPayload implements Serializable {
         return centerNodeId;
     }
 
+    public Object getCenterNodeId() {
+        return centerNodeId;
+    }
+
     public List<Object> getSampled_nodes() {
+        return sampledNodes;
+    }
+
+    public List<Object> getSampledNodes() {
         return sampledNodes;
     }
 
@@ -51,11 +59,23 @@ public class GCNInferPayload implements Serializable {
         return nodeFeatures;
     }
 
+    public List<double[]> getNodeFeatures() {
+        return nodeFeatures;
+    }
+
     public int[][] getEdge_index() {
         return edgeIndex;
     }
 
+    public int[][] getEdgeIndex() {
+        return edgeIndex;
+    }
+
     public double[] getEdge_weight() {
+        return edgeWeight;
+    }
+
+    public double[] getEdgeWeight() {
         return edgeWeight;
     }
 }

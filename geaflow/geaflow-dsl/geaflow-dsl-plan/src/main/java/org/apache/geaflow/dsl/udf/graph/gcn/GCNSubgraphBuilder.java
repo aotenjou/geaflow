@@ -26,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.Set;
 
@@ -39,27 +40,32 @@ public class GCNSubgraphBuilder {
 
     public GCNInferPayload build(Object rootId, GraphAdapter adapter) {
         Map<Object, double[]> nodeFeatures = new LinkedHashMap<>();
-        List<int[]> edges = new ArrayList<>();
+        Map<Object, Integer> nodeIndexes = new LinkedHashMap<>();
+        Map<DirectedEdge, Double> edgeWeights = new LinkedHashMap<>();
         Set<Object> currentFrontier = new LinkedHashSet<>();
         currentFrontier.add(rootId);
-        nodeFeatures.put(rootId, adapter.loadFeatures(rootId));
+        putNode(nodeFeatures, nodeIndexes, rootId, adapter.loadFeatures(rootId));
         Random random = new Random(config.getRandomSeed() ^ rootId.hashCode());
         for (int hop = 0; hop < config.getNumHops(); hop++) {
             Set<Object> nextFrontier = new LinkedHashSet<>();
             for (Object nodeId : currentFrontier) {
-                List<Object> neighbors = new ArrayList<>(adapter.loadNeighbors(nodeId));
+                List<Neighbor> neighbors = new ArrayList<>(adapter.loadWeightedNeighbors(nodeId));
                 if (neighbors.isEmpty()) {
                     continue;
                 }
                 Collections.shuffle(neighbors, random);
                 int sampleSize = Math.min(config.getNumSamplesPerHop(), neighbors.size());
+                int srcIndex = nodeIndexes.get(nodeId);
                 for (int i = 0; i < sampleSize; i++) {
-                    Object neighborId = neighbors.get(i);
+                    Neighbor neighbor = neighbors.get(i);
+                    Object neighborId = neighbor.getNodeId();
                     nextFrontier.add(neighborId);
                     if (!nodeFeatures.containsKey(neighborId)) {
-                        nodeFeatures.put(neighborId, adapter.loadFeatures(neighborId));
+                        putNode(nodeFeatures, nodeIndexes, neighborId, adapter.loadFeatures(neighborId));
                     }
-                    edges.add(new int[]{indexOf(nodeFeatures, nodeId), indexOf(nodeFeatures, neighborId)});
+                    int dstIndex = nodeIndexes.get(neighborId);
+                    putEdge(edgeWeights, srcIndex, dstIndex, neighbor.getWeight());
+                    putEdge(edgeWeights, dstIndex, srcIndex, neighbor.getWeight());
                 }
             }
             currentFrontier = nextFrontier;
@@ -69,34 +75,105 @@ public class GCNSubgraphBuilder {
         }
         if (config.isWithSelfLoop()) {
             for (int i = 0; i < nodeFeatures.size(); i++) {
-                edges.add(new int[]{i, i});
+                putEdge(edgeWeights, i, i, GCNEdgeWeightExtractor.DEFAULT_EDGE_WEIGHT);
             }
         }
         List<Object> sampledNodes = new ArrayList<>(nodeFeatures.keySet());
         List<double[]> features = new ArrayList<>(nodeFeatures.values());
-        int[][] edgeIndex = new int[2][edges.size()];
-        for (int i = 0; i < edges.size(); i++) {
-            edgeIndex[0][i] = edges.get(i)[0];
-            edgeIndex[1][i] = edges.get(i)[1];
-        }
-        return new GCNInferPayload(rootId, sampledNodes, features, edgeIndex, null);
-    }
-
-    private int indexOf(Map<Object, double[]> nodeFeatures, Object nodeId) {
+        int[][] edgeIndex = new int[2][edgeWeights.size()];
+        double[] payloadEdgeWeight = new double[edgeWeights.size()];
         int index = 0;
-        for (Object id : nodeFeatures.keySet()) {
-            if (id.equals(nodeId)) {
-                return index;
-            }
+        for (Map.Entry<DirectedEdge, Double> entry : edgeWeights.entrySet()) {
+            edgeIndex[0][index] = entry.getKey().getSrcIndex();
+            edgeIndex[1][index] = entry.getKey().getDstIndex();
+            payloadEdgeWeight[index] = entry.getValue();
             index++;
         }
-        throw new IllegalArgumentException("Node not found in sampled subgraph: " + nodeId);
+        return new GCNInferPayload(rootId, sampledNodes, features, edgeIndex, payloadEdgeWeight);
+    }
+
+    private void putNode(Map<Object, double[]> nodeFeatures, Map<Object, Integer> nodeIndexes,
+                         Object nodeId, double[] features) {
+        nodeIndexes.put(nodeId, nodeIndexes.size());
+        nodeFeatures.put(nodeId, features);
+    }
+
+    private void putEdge(Map<DirectedEdge, Double> edgeWeights, int srcIndex, int dstIndex,
+                         double weight) {
+        edgeWeights.putIfAbsent(new DirectedEdge(srcIndex, dstIndex), weight);
     }
 
     public interface GraphAdapter extends Serializable {
 
-        List<Object> loadNeighbors(Object nodeId);
+        default List<Object> loadNeighbors(Object nodeId) {
+            List<Neighbor> neighbors = loadWeightedNeighbors(nodeId);
+            if (neighbors == null || neighbors.isEmpty()) {
+                return Collections.emptyList();
+            }
+            List<Object> neighborIds = new ArrayList<>(neighbors.size());
+            for (Neighbor neighbor : neighbors) {
+                neighborIds.add(neighbor.getNodeId());
+            }
+            return neighborIds;
+        }
+
+        List<Neighbor> loadWeightedNeighbors(Object nodeId);
 
         double[] loadFeatures(Object nodeId);
+    }
+
+    public static final class Neighbor implements Serializable {
+
+        private final Object nodeId;
+        private final double weight;
+
+        public Neighbor(Object nodeId, double weight) {
+            this.nodeId = nodeId;
+            this.weight = weight;
+        }
+
+        public Object getNodeId() {
+            return nodeId;
+        }
+
+        public double getWeight() {
+            return weight;
+        }
+    }
+
+    private static final class DirectedEdge implements Serializable {
+
+        private final int srcIndex;
+        private final int dstIndex;
+
+        private DirectedEdge(int srcIndex, int dstIndex) {
+            this.srcIndex = srcIndex;
+            this.dstIndex = dstIndex;
+        }
+
+        private int getSrcIndex() {
+            return srcIndex;
+        }
+
+        private int getDstIndex() {
+            return dstIndex;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof DirectedEdge)) {
+                return false;
+            }
+            DirectedEdge that = (DirectedEdge) o;
+            return srcIndex == that.srcIndex && dstIndex == that.dstIndex;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(srcIndex, dstIndex);
+        }
     }
 }

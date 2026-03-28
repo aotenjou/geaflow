@@ -30,6 +30,7 @@ import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.dsl.common.algo.AlgorithmRuntimeContext;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowEdge;
+import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.dsl.common.exception.GeaFlowDSLException;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
@@ -79,6 +80,10 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
     public void setVertexId(Object vertexId) {
         this.vertexId = vertexId;
         this.edgeQuery.withId(vertexId);
+    }
+
+    public RowVertex loadVertex() {
+        return (RowVertex) traversalContext.vertex().withId(vertexId).get();
     }
 
     @SuppressWarnings("unchecked")

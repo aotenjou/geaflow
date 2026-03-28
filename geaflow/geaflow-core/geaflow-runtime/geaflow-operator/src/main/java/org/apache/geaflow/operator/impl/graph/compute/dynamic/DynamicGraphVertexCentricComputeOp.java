@@ -20,10 +20,8 @@
 package org.apache.geaflow.operator.impl.graph.compute.dynamic;
 
 import java.io.IOException;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import org.apache.geaflow.api.function.iterator.RichIteratorFunction;
 import org.apache.geaflow.api.graph.base.algo.AbstractIncVertexCentricComputeAlgo;
@@ -32,6 +30,7 @@ import org.apache.geaflow.api.graph.function.vc.IncVertexCentricComputeFunction.
 import org.apache.geaflow.api.graph.function.vc.base.IncGraphInferContext;
 import org.apache.geaflow.collector.ICollector;
 import org.apache.geaflow.common.config.Configuration;
+import org.apache.geaflow.common.config.InferConfigHelper;
 import org.apache.geaflow.common.config.keys.FrameworkConfigKeys;
 import org.apache.geaflow.common.exception.GeaflowRuntimeException;
 import org.apache.geaflow.infer.InferContext;
@@ -196,14 +195,6 @@ public class DynamicGraphVertexCentricComputeOp<K, VV, EV, M, FUNC extends IncVe
     }
 
     static Configuration buildInferConfiguration(Configuration baseConfig, String pythonTransformClassName) {
-        if (pythonTransformClassName == null || pythonTransformClassName.trim().isEmpty()) {
-            return baseConfig;
-        }
-        Map<String, String> configMap = new HashMap<>(baseConfig.getConfigMap());
-        configMap.put(FrameworkConfigKeys.INFER_ENV_USER_TRANSFORM_CLASSNAME.getKey(),
-            pythonTransformClassName);
-        Configuration configuration = new Configuration(configMap);
-        configuration.setMasterId(baseConfig.getMasterId());
-        return configuration;
+        return InferConfigHelper.buildInferConfiguration(baseConfig, pythonTransformClassName);
     }
 }

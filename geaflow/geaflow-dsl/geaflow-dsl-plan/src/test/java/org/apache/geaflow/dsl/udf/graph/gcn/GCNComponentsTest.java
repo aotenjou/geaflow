@@ -27,8 +27,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.apache.geaflow.common.binary.BinaryString;
 import org.apache.geaflow.common.type.IType;
 import org.apache.geaflow.common.type.Types;
@@ -124,12 +126,14 @@ public class GCNComponentsTest {
         GCNSubgraphBuilder builder = new GCNSubgraphBuilder(config);
         GCNInferPayload payload = builder.build(1L, new GCNSubgraphBuilder.GraphAdapter() {
             @Override
-            public List<Object> loadNeighbors(Object nodeId) {
+            public List<GCNSubgraphBuilder.Neighbor> loadWeightedNeighbors(Object nodeId) {
                 if (nodeId.equals(1L)) {
-                    return Arrays.asList(2L, 3L);
+                    return Arrays.asList(
+                        new GCNSubgraphBuilder.Neighbor(2L, 2.0D),
+                        new GCNSubgraphBuilder.Neighbor(3L, 3.0D));
                 }
                 if (nodeId.equals(2L)) {
-                    return Collections.singletonList(4L);
+                    return Collections.singletonList(new GCNSubgraphBuilder.Neighbor(4L, 4.0D));
                 }
                 return Collections.emptyList();
             }
@@ -143,8 +147,16 @@ public class GCNComponentsTest {
         assertEquals(payload.getSampled_nodes().size(), 4);
         assertTrue(payload.getSampled_nodes().containsAll(Arrays.asList(1L, 2L, 3L, 4L)));
         assertEquals(payload.getNode_features().size(), 4);
-        assertEquals(payload.getEdge_index()[0].length, 7);
+        assertEquals(payload.getEdge_index()[0].length, 10);
         assertNotNull(payload.getEdge_index());
+        assertNotNull(payload.getEdge_weight());
+        assertEquals(payload.getEdge_weight().length, 10);
+        assertEdgePairsEqualIgnoreOrder(payload, new Object[][]{
+            {1L, 2L}, {2L, 1L}, {1L, 3L}, {3L, 1L}, {2L, 4L}, {4L, 2L},
+            {1L, 1L}, {2L, 2L}, {3L, 3L}, {4L, 4L}
+        });
+        assertEdgeWeightsEqualIgnoreOrder(payload.getEdge_weight(),
+            new double[]{2.0D, 2.0D, 3.0D, 3.0D, 4.0D, 4.0D, 1.0D, 1.0D, 1.0D, 1.0D});
     }
 
     @Test
@@ -154,8 +166,12 @@ public class GCNComponentsTest {
         GCNSubgraphBuilder builder = new GCNSubgraphBuilder(config);
         GCNInferPayload payload = builder.build(1L, new GCNSubgraphBuilder.GraphAdapter() {
             @Override
-            public List<Object> loadNeighbors(Object nodeId) {
-                return Arrays.asList(2L, 3L, 4L);
+            public List<GCNSubgraphBuilder.Neighbor> loadWeightedNeighbors(Object nodeId) {
+                return Arrays.asList(
+                    new GCNSubgraphBuilder.Neighbor(2L, 1.0D),
+                    new GCNSubgraphBuilder.Neighbor(3L, 1.0D),
+                    new GCNSubgraphBuilder.Neighbor(4L, 1.0D)
+                );
             }
 
             @Override
@@ -165,8 +181,14 @@ public class GCNComponentsTest {
         });
 
         assertEquals(payload.getSampled_nodes().size(), 2);
-        assertEquals(payload.getEdge_index()[0].length, 1);
+        assertEquals(payload.getEdge_index()[0].length, 2);
         assertTrue(payload.getSampled_nodes().contains(1L));
+        Object sampledNeighbor = payload.getSampled_nodes().get(0).equals(1L)
+            ? payload.getSampled_nodes().get(1) : payload.getSampled_nodes().get(0);
+        assertEdgePairsEqualIgnoreOrder(payload, new Object[][]{
+            {1L, sampledNeighbor}, {sampledNeighbor, 1L}
+        });
+        assertEdgeWeightsEqualIgnoreOrder(payload.getEdge_weight(), new double[]{1.0D, 1.0D});
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)
@@ -177,6 +199,37 @@ public class GCNComponentsTest {
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testConfigRejectsNonPositiveHopCount() {
         new GCNConfig(0, 1, GCNConfig.DEFAULT_PYTHON_TRANSFORM_CLASS);
+    }
+
+    private static void assertEdgeWeightsEqualIgnoreOrder(double[] actual, double[] expected) {
+        double[] actualCopy = Arrays.copyOf(actual, actual.length);
+        double[] expectedCopy = Arrays.copyOf(expected, expected.length);
+        Arrays.sort(actualCopy);
+        Arrays.sort(expectedCopy);
+        assertEquals(actualCopy, expectedCopy);
+    }
+
+    private static void assertEdgePairsEqualIgnoreOrder(GCNInferPayload payload, Object[][] expectedPairs) {
+        Set<String> actual = toEdgePairs(payload.getSampled_nodes(), payload.getEdge_index());
+        Set<String> expected = new HashSet<>();
+        for (Object[] expectedPair : expectedPairs) {
+            expected.add(String.valueOf(expectedPair[0]) + "->" + String.valueOf(expectedPair[1]));
+        }
+        assertEquals(actual, expected);
+    }
+
+    private static Set<String> toEdgePairs(List<Object> sampledNodes, int[][] edgeIndex) {
+        Set<String> edgePairs = new HashSet<>();
+        if (edgeIndex == null || edgeIndex.length < 2) {
+            return edgePairs;
+        }
+        int edgeCount = Math.min(edgeIndex[0].length, edgeIndex[1].length);
+        for (int i = 0; i < edgeCount; i++) {
+            Object src = sampledNodes.get(edgeIndex[0][i]);
+            Object dst = sampledNodes.get(edgeIndex[1][i]);
+            edgePairs.add(String.valueOf(src) + "->" + String.valueOf(dst));
+        }
+        return edgePairs;
     }
 
     private static class TestRowVertex implements RowVertex {

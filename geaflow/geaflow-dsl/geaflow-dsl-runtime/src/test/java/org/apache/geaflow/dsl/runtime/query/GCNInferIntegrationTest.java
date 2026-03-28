@@ -56,8 +56,12 @@ public class GCNInferIntegrationTest {
     private static final String TEST_JOB_JAR = "gcn-test-job.jar";
     private static final String GCN_TRANSFORM_CLASS = "GCNTransFormFunction";
     private static final String FAILING_TRANSFORM_CLASS = "GCNFailingTransformFunction";
+    private static final String PER_CALL_TRANSFORM_CLASS = "GCNPerCallTransformFunction";
+    private static final String WEIGHTED_TRANSFORM_CLASS = "GCNWeightedEdgeAwareTransformFunction";
     private static final String CONDA_URL_ENV = "GEAFLOW_GCN_INFER_CONDA_URL";
     private static final String GCN_QUERY_PATH = "/query/gql_algorithm_gcn_infer_001.sql";
+    private static final String GCN_PER_CALL_QUERY_PATH = "/query/gql_algorithm_gcn_infer_002.sql";
+    private static final String GCN_WEIGHTED_QUERY_PATH = "/query/gql_algorithm_gcn_infer_003.sql";
 
     @AfterMethod
     public void tearDown() {
@@ -97,26 +101,85 @@ public class GCNInferIntegrationTest {
             "print('GCN direct python test passed')"
         );
 
-        File scriptFile = new File(udfDir, "test_gcn_udf.py");
-        try (OutputStreamWriter writer = new OutputStreamWriter(
-            new FileOutputStream(scriptFile), StandardCharsets.UTF_8)) {
-            writer.write(testScript);
-        }
-
-        Process process = new ProcessBuilder(findPythonExecutable(), scriptFile.getAbsolutePath())
-            .directory(udfDir)
-            .redirectErrorStream(true)
-            .start();
-        String output = readProcessOutput(process);
-        int exitCode = process.waitFor();
-
-        Assert.assertEquals(exitCode, 0, output);
+        String output = runPythonScript(udfDir, "test_gcn_udf.py", testScript);
         Assert.assertTrue(output.contains("GCN direct python test passed"), output);
     }
 
     @Test
     public void testPythonModulesAvailable() throws Exception {
         ensurePythonModuleAvailable("torch");
+    }
+
+    @Test(timeOut = 30000)
+    public void testGCNPythonUDFDirectRespectsEdgeWeightWithoutModelFile() throws Exception {
+        ensurePythonModuleAvailable("torch");
+        File udfDir = new File(PYTHON_UDF_DIR);
+        FileUtils.forceMkdir(udfDir);
+        copyResourceToDirectory("TransFormFunctionUDF.py", udfDir);
+
+        String testScript = String.join("\n",
+            "import os",
+            "import sys",
+            "os.chdir('" + escapeForPython(udfDir.getAbsolutePath()) + "')",
+            "sys.path.insert(0, os.getcwd())",
+            "from TransFormFunctionUDF import GCNTransFormFunction",
+            "def max_abs_diff(left, right):",
+            "    return max(abs(float(l) - float(r)) for l, r in zip(left, right))",
+            "payload_base = {",
+            "  'center_node_id': 1,",
+            "  'sampled_nodes': [1, 2],",
+            "  'node_features': [[1.0, 0.0], [0.0, 1.0]],",
+            "  'edge_index': [[0, 1, 0, 1], [1, 0, 0, 1]]",
+            "}",
+            "payload_unit_weight = dict(payload_base)",
+            "payload_unit_weight['edge_weight'] = [1.0, 1.0, 1.0, 1.0]",
+            "payload_weighted = dict(payload_base)",
+            "payload_weighted['edge_weight'] = [5.0, 1.0, 1.0, 1.0]",
+            "func = GCNTransFormFunction()",
+            "base_result, _ = func.transform_pre(payload_base)",
+            "unit_result, _ = func.transform_pre(payload_unit_weight)",
+            "weighted_result, _ = func.transform_pre(payload_weighted)",
+            "assert max_abs_diff(base_result['embedding'], unit_result['embedding']) < 1e-8",
+            "assert max_abs_diff(base_result['embedding'], weighted_result['embedding']) > 1e-6",
+            "print('GCN weighted python test passed')"
+        );
+
+        String output = runPythonScript(udfDir, "test_gcn_weighted_udf.py", testScript);
+        Assert.assertTrue(output.contains("GCN weighted python test passed"), output);
+    }
+
+    @Test(timeOut = 30000)
+    public void testGCNPythonUDFDirectUsesNeighborFeaturesForCenterNode() throws Exception {
+        ensurePythonModuleAvailable("torch");
+        File udfDir = new File(PYTHON_UDF_DIR);
+        FileUtils.forceMkdir(udfDir);
+        copyResourceToDirectory("TransFormFunctionUDF.py", udfDir);
+
+        String testScript = String.join("\n",
+            "import os",
+            "import sys",
+            "os.chdir('" + escapeForPython(udfDir.getAbsolutePath()) + "')",
+            "sys.path.insert(0, os.getcwd())",
+            "from TransFormFunctionUDF import GCNTransFormFunction",
+            "def max_abs_diff(left, right):",
+            "    return max(abs(float(l) - float(r)) for l, r in zip(left, right))",
+            "payload_base = {",
+            "  'center_node_id': 1,",
+            "  'sampled_nodes': [1, 2],",
+            "  'node_features': [[1.0, 0.0], [0.0, 1.0]],",
+            "  'edge_index': [[0, 1, 0, 1], [1, 0, 0, 1]]",
+            "}",
+            "payload_changed_neighbor = dict(payload_base)",
+            "payload_changed_neighbor['node_features'] = [[1.0, 0.0], [9.0, 9.0]]",
+            "func = GCNTransFormFunction()",
+            "base_result, _ = func.transform_pre(payload_base)",
+            "changed_result, _ = func.transform_pre(payload_changed_neighbor)",
+            "assert max_abs_diff(base_result['embedding'], changed_result['embedding']) > 1e-6",
+            "print('GCN neighbor aggregation python test passed')"
+        );
+
+        String output = runPythonScript(udfDir, "test_gcn_neighbor_udf.py", testScript);
+        Assert.assertTrue(output.contains("GCN neighbor aggregation python test passed"), output);
     }
 
     @Test(timeOut = 600000)
@@ -204,6 +267,49 @@ public class GCNInferIntegrationTest {
             .checkSinkResult();
     }
 
+    @Test(timeOut = 600000)
+    public void testGCNQueryRuntimeUsesPerCallTransformWhenCondaConfigured() throws Exception {
+        String condaUrl = System.getenv(CONDA_URL_ENV);
+        if (condaUrl == null || condaUrl.trim().isEmpty()) {
+            throw new SkipException("Skip GCN per-call transform query test: " + CONDA_URL_ENV
+                + " is not set");
+        }
+
+        createTestJobJar();
+
+        QueryTester
+            .build()
+            .withConfig(FrameworkConfigKeys.INFER_ENV_ENABLE.getKey(), "true")
+            .withConfig(FrameworkConfigKeys.INFER_ENV_CONDA_URL.getKey(), condaUrl)
+            .withConfig(FrameworkConfigKeys.INFER_ENV_INIT_TIMEOUT_SEC.getKey(), "300")
+            .withConfig(ExecutionConfigKeys.JOB_WORK_PATH.getKey(), TEST_WORK_DIR)
+            .withConfig(FileConfigKeys.USER_NAME.getKey(), "gcn_test_user")
+            .withQueryPath(GCN_PER_CALL_QUERY_PATH)
+            .execute()
+            .checkSinkResult();
+    }
+
+    @Test(timeOut = 600000)
+    public void testGCNQueryRuntimePassesEdgeWeightWhenCondaConfigured() throws Exception {
+        String condaUrl = System.getenv(CONDA_URL_ENV);
+        if (condaUrl == null || condaUrl.trim().isEmpty()) {
+            throw new SkipException("Skip GCN weighted query test: " + CONDA_URL_ENV + " is not set");
+        }
+
+        createTestJobJar();
+
+        QueryTester
+            .build()
+            .withConfig(FrameworkConfigKeys.INFER_ENV_ENABLE.getKey(), "true")
+            .withConfig(FrameworkConfigKeys.INFER_ENV_CONDA_URL.getKey(), condaUrl)
+            .withConfig(FrameworkConfigKeys.INFER_ENV_INIT_TIMEOUT_SEC.getKey(), "300")
+            .withConfig(ExecutionConfigKeys.JOB_WORK_PATH.getKey(), TEST_WORK_DIR)
+            .withConfig(FileConfigKeys.USER_NAME.getKey(), "gcn_test_user")
+            .withQueryPath(GCN_WEIGHTED_QUERY_PATH)
+            .execute()
+            .checkSinkResult();
+    }
+
     private void ensurePythonModuleAvailable(String moduleName) throws Exception {
         String pythonExecutable = findPythonExecutable();
         Process process = new ProcessBuilder(
@@ -214,6 +320,24 @@ public class GCNInferIntegrationTest {
             throw new SkipException("Skip python integration test, missing module " + moduleName
                 + ": " + output);
         }
+    }
+
+    private String runPythonScript(File workingDir, String fileName, String scriptContent)
+        throws Exception {
+        File scriptFile = new File(workingDir, fileName);
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+            new FileOutputStream(scriptFile), StandardCharsets.UTF_8)) {
+            writer.write(scriptContent);
+        }
+
+        Process process = new ProcessBuilder(findPythonExecutable(), scriptFile.getAbsolutePath())
+            .directory(workingDir)
+            .redirectErrorStream(true)
+            .start();
+        String output = readProcessOutput(process);
+        int exitCode = process.waitFor();
+        Assert.assertEquals(exitCode, 0, output);
+        return output;
     }
 
     private String findPythonExecutable() {
@@ -310,7 +434,7 @@ public class GCNInferIntegrationTest {
                     featureVector(0.0D, 1.0D),
                     featureVector(2.0D, 1.0D)
                 ),
-                new int[][]{{0, 0, 0, 1, 2}, {1, 2, 0, 1, 2}},
+                new int[][]{{0, 1, 0, 2, 0, 1, 2}, {1, 0, 2, 0, 0, 1, 2}},
                 null
             );
         }
@@ -322,7 +446,7 @@ public class GCNInferIntegrationTest {
                     featureVector(0.0D, 1.0D),
                     featureVector(1.0D, 2.0D)
                 ),
-                new int[][]{{0, 0, 1}, {1, 0, 1}},
+                new int[][]{{0, 1, 0, 1}, {1, 0, 0, 1}},
                 null
             );
         }
@@ -334,7 +458,7 @@ public class GCNInferIntegrationTest {
                     featureVector(2.0D, 1.0D),
                     featureVector(1.0D, 2.0D)
                 ),
-                new int[][]{{0, 0, 1}, {1, 0, 1}},
+                new int[][]{{0, 1, 0, 1}, {1, 0, 0, 1}},
                 null
             );
         }
@@ -387,6 +511,62 @@ public class GCNInferIntegrationTest {
         builder.append("        raise RuntimeError('gcn failing transform invoked')\n\n");
         builder.append("    def transform_post(self, *inputs):\n");
         builder.append("        return None\n");
+        builder.append('\n');
+        builder.append("def _read_center_node_id(payload):\n");
+        builder.append("    if isinstance(payload, dict):\n");
+        builder.append("        return payload.get('center_node_id')\n");
+        builder.append("    if hasattr(payload, 'getCenter_node_id'):\n");
+        builder.append("        return payload.getCenter_node_id()\n");
+        builder.append("    if hasattr(payload, 'getCenterNodeId'):\n");
+        builder.append("        return payload.getCenterNodeId()\n");
+        builder.append("    return None\n\n");
+        builder.append("def _read_edge_weight(payload):\n");
+        builder.append("    if isinstance(payload, dict):\n");
+        builder.append("        if 'edge_weight' in payload:\n");
+        builder.append("            return payload.get('edge_weight')\n");
+        builder.append("        return payload.get('edgeWeight')\n");
+        builder.append("    if hasattr(payload, 'getEdge_weight'):\n");
+        builder.append("        return payload.getEdge_weight()\n");
+        builder.append("    if hasattr(payload, 'getEdgeWeight'):\n");
+        builder.append("        return payload.getEdgeWeight()\n");
+        builder.append("    return None\n\n");
+        builder.append("class ").append(PER_CALL_TRANSFORM_CLASS).append("(object):\n");
+        builder.append("    input_size = 1\n\n");
+        builder.append("    def transform_pre(self, *inputs):\n");
+        builder.append("        center_node_id = _read_center_node_id(inputs[0] if len(inputs) > 0 else None)\n");
+        builder.append("        result = {\n");
+        builder.append("            'node_id': center_node_id,\n");
+        builder.append("            'embedding': [9.0, 9.0],\n");
+        builder.append("            'predicted_class': 99,\n");
+        builder.append("            'confidence': 1.0\n");
+        builder.append("        }\n");
+        builder.append("        return result, center_node_id\n\n");
+        builder.append("    def transform_post(self, *inputs):\n");
+        builder.append("        return inputs[0] if len(inputs) > 0 else None\n");
+        builder.append('\n');
+        builder.append("class ").append(WEIGHTED_TRANSFORM_CLASS).append("(object):\n");
+        builder.append("    input_size = 1\n\n");
+        builder.append("    def transform_pre(self, *inputs):\n");
+        builder.append("        payload = inputs[0] if len(inputs) > 0 else None\n");
+        builder.append("        center_node_id = _read_center_node_id(payload)\n");
+        builder.append("        edge_weight = _read_edge_weight(payload)\n");
+        builder.append("        has_custom_weight = False\n");
+        builder.append("        if edge_weight is not None:\n");
+        builder.append("            for value in edge_weight:\n");
+        builder.append("                if value is None:\n");
+        builder.append("                    continue\n");
+        builder.append("                if abs(float(value) - 1.0) > 1e-9:\n");
+        builder.append("                    has_custom_weight = True\n");
+        builder.append("                    break\n");
+        builder.append("        result = {\n");
+        builder.append("            'node_id': center_node_id,\n");
+        builder.append("            'embedding': [1.0 if has_custom_weight else 0.0],\n");
+        builder.append("            'predicted_class': 77 if has_custom_weight else 11,\n");
+        builder.append("            'confidence': 1.0\n");
+        builder.append("        }\n");
+        builder.append("        return result, center_node_id\n\n");
+        builder.append("    def transform_post(self, *inputs):\n");
+        builder.append("        return inputs[0] if len(inputs) > 0 else None\n");
         return builder.toString();
     }
 
