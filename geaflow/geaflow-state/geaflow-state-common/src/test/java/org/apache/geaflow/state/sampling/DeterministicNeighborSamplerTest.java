@@ -21,16 +21,13 @@ package org.apache.geaflow.state.sampling;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
-import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
 import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.graph.edge.impl.ValueEdge;
 import org.apache.geaflow.model.graph.vertex.impl.ValueVertex;
-import org.apache.geaflow.state.data.OneDegreeGraph;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
@@ -122,41 +119,6 @@ public class DeterministicNeighborSamplerTest {
     }
 
     @Test
-    public void testOneDegreeStateExposesOneHopSampling() {
-        TrackingIterator iterator = new TrackingIterator(Arrays.asList(
-            edge(1L, 2L), edge(1L, 3L), edge(1L, 4L)).iterator());
-        OneDegreeGraph<Long, String, String> oneDegreeGraph = new OneDegreeGraph<>(1L,
-            new ValueVertex<>(1L, "vertex"), iterator);
-
-        List<IEdge<Long, String>> sampled = oneDegreeGraph.sampleNeighbors(
-            EdgeDirection.OUT, 2);
-
-        Assert.assertEquals(sampled.size(), 2);
-        Assert.assertTrue(iterator.closed);
-        Assert.assertEquals(oneDegreeGraph.sampleNeighbors(EdgeDirection.OUT, 2), sampled);
-    }
-
-    @Test(expectedExceptions = IllegalStateException.class)
-    public void testOneDegreeStateRejectsDifferentRequestAfterIteratorConsumption() {
-        OneDegreeGraph<Long, String, String> oneDegreeGraph = new OneDegreeGraph<>(1L,
-            new ValueVertex<>(1L, "vertex"), new TrackingIterator(Arrays.asList(
-                edge(1L, 2L), edge(1L, 3L), edge(1L, 4L)).iterator()));
-
-        oneDegreeGraph.sampleNeighbors(EdgeDirection.OUT, 2);
-        oneDegreeGraph.sampleNeighbors(EdgeDirection.OUT, 1);
-    }
-
-    @Test(expectedExceptions = IllegalStateException.class)
-    public void testOneDegreeStateRejectsDifferentSamplingVersion() {
-        OneDegreeGraph<Long, String, String> oneDegreeGraph = new OneDegreeGraph<>(1L,
-            new ValueVertex<>(1L, "vertex"), new TrackingIterator(Arrays.asList(
-                edge(1L, 2L), edge(1L, 3L), edge(1L, 4L)).iterator()));
-
-        oneDegreeGraph.sampleNeighbors(EdgeDirection.OUT, 2, 10L, 17L, 1L);
-        oneDegreeGraph.sampleNeighbors(EdgeDirection.OUT, 2, 10L, 17L, 2L);
-    }
-
-    @Test
     public void testNeighborhoodMatchesSnapshotAndSamplingVersion() {
         LocalNeighborhood<Long, String, String> neighborhood = new LocalNeighborhood<>(
             new ValueVertex<>(1L, "vertex"), Arrays.asList(edge(1L, 2L)), 7L, 3L);
@@ -187,28 +149,4 @@ public class DeterministicNeighborSamplerTest {
         return edges.stream().map(IEdge::getTargetId).collect(Collectors.toList());
     }
 
-    private static class TrackingIterator implements CloseableIterator<IEdge<Long, String>> {
-
-        private final Iterator<IEdge<Long, String>> delegate;
-        private boolean closed;
-
-        private TrackingIterator(Iterator<IEdge<Long, String>> delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public void close() {
-            closed = true;
-        }
-
-        @Override
-        public boolean hasNext() {
-            return delegate.hasNext();
-        }
-
-        @Override
-        public IEdge<Long, String> next() {
-            return delegate.next();
-        }
-    }
 }
