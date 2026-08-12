@@ -27,6 +27,7 @@ import java.util.Iterator;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import org.apache.geaflow.api.function.iterator.RichIteratorFunction;
 import org.apache.geaflow.api.graph.function.vc.VertexCentricAggTraversalFunction;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
 import org.apache.geaflow.dsl.common.data.Row;
@@ -43,7 +44,8 @@ import org.apache.geaflow.utils.keygroup.KeyGroupAssignerFactory;
 import org.apache.geaflow.utils.keygroup.KeyGroupAssignment;
 
 public class GeaFlowAlgorithmAggTraversalFunction implements
-    VertexCentricAggTraversalFunction<Object, Row, Row, Object, Row, ITraversalAgg, ITraversalAgg> {
+    VertexCentricAggTraversalFunction<Object, Row, Row, Object, Row, ITraversalAgg, ITraversalAgg>,
+    RichIteratorFunction {
 
     private static final String STATE_SUFFIX = "UpdatedValueState";
 
@@ -143,6 +145,16 @@ public class GeaFlowAlgorithmAggTraversalFunction implements
     @Override
     public void close() {
         algorithmCtx.close();
+    }
+
+    @Override
+    public void initIteration(long iterationId) {
+        userFunction.initIteration(iterationId);
+    }
+
+    @Override
+    public void finishIteration(long iterationId) {
+        userFunction.finishIteration(iterationId);
     }
 
     @Override

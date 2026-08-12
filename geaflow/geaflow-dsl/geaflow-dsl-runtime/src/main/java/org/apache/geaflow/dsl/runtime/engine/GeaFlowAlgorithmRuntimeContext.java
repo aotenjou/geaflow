@@ -20,6 +20,7 @@
 package org.apache.geaflow.dsl.runtime.engine;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import org.apache.geaflow.api.graph.function.aggregate.VertexCentricAggContextFunction.VertexCentricAggContext;
@@ -28,21 +29,25 @@ import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.V
 import org.apache.geaflow.common.config.Configuration;
 import org.apache.geaflow.common.exception.GeaflowRuntimeException;
 import org.apache.geaflow.common.iterator.CloseableIterator;
-import org.apache.geaflow.dsl.common.algo.AlgorithmRuntimeContext;
+import org.apache.geaflow.dsl.common.algo.AlgorithmSamplingRuntimeContext;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowEdge;
+import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.dsl.common.exception.GeaFlowDSLException;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.runtime.traversal.message.ITraversalAgg;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
+import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.traversal.ITraversalResponse;
 import org.apache.geaflow.model.traversal.TraversalType.ResponseType;
 import org.apache.geaflow.state.pushdown.filter.EmptyFilter;
 import org.apache.geaflow.state.pushdown.filter.IFilter;
 import org.apache.geaflow.state.pushdown.filter.InEdgeFilter;
 import org.apache.geaflow.state.pushdown.filter.OutEdgeFilter;
+import org.apache.geaflow.state.sampling.DeterministicNeighborSampler;
+import org.apache.geaflow.state.sampling.LocalNeighborhood;
 
-public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<Object, Object> {
+public class GeaFlowAlgorithmRuntimeContext implements AlgorithmSamplingRuntimeContext<Object, Object> {
 
     private final VertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext;
 
@@ -111,6 +116,49 @@ public class GeaFlowAlgorithmRuntimeContext implements AlgorithmRuntimeContext<O
     @Override
     public List<RowEdge> loadStaticEdges(EdgeDirection direction) {
         return loadEdges(direction);
+    }
+
+    @Override
+    public LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
+                                                             EdgeDirection direction,
+                                                             int fanout) {
+        List<IEdge<Object, Row>> edges = DeterministicNeighborSampler.sample(vertex.getId(),
+            loadStaticEdges(direction), direction, fanout);
+        return new LocalNeighborhood<>(vertex, edges, getSamplingSnapshotVersion());
+    }
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
+                                                             EdgeDirection direction,
+                                                             int fanout,
+                                                             long maxCandidateEdges) {
+        return sampleOneHop(vertex, direction, fanout, maxCandidateEdges, 0L,
+            getSamplingSnapshotVersion());
+    }
+
+    @Override
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    public LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
+                                                             EdgeDirection direction,
+                                                             int fanout,
+                                                             long maxReturnedEdges,
+                                                             long seed,
+                                                             long samplingVersion) {
+        try (CloseableIterator<RowEdge> iterator = loadStaticEdgesIterator(direction)) {
+            Iterable<RowEdge> iterable = () -> iterator;
+            Comparator<Object> comparator = (left, right) ->
+                ((org.apache.geaflow.common.type.IType) graphSchema.getIdType()).compare(left, right);
+            List<IEdge<Object, Row>> edges = (List) DeterministicNeighborSampler.sample(
+                vertex.getId(), iterable, direction, fanout, comparator, maxReturnedEdges,
+                seed, samplingVersion);
+            return new LocalNeighborhood<>(vertex, edges, getSamplingSnapshotVersion(), samplingVersion);
+        }
+    }
+
+    @Override
+    public long getSamplingSnapshotVersion() {
+        return traversalContext.getRuntimeContext().getWindowId();
     }
 
     @Override

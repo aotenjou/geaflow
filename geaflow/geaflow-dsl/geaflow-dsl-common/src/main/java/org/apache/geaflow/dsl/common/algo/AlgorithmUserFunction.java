@@ -60,6 +60,10 @@ public interface AlgorithmUserFunction<K, M> extends Serializable {
     default void finish() {
     }
 
+    /** Called before an iteration starts processing vertices and messages. */
+    default void initIteration(long iterationId) {
+    }
+
     /**
      * Finish Iteration method called after each iteration finished.
      */
