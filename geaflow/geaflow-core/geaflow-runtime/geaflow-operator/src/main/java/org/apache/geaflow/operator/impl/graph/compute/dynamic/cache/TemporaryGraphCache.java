@@ -55,6 +55,7 @@ public class TemporaryGraphCache<K, VV, EV> {
 
     public void addEdge(IEdge<K, EV> edge) {
         this.vertexIds.add(edge.getSrcId());
+        this.vertexIds.add(edge.getTargetId());
         List<IEdge<K, EV>> edges = this.vertexEdges.getOrDefault(edge.getSrcId(),
             new ArrayList<>());
         edges.add(edge);
