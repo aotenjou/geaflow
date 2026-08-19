@@ -53,7 +53,69 @@ public class LayeredSubgraphAssemblerTest {
         Assert.assertEquals(subgraph.getEdgeLayers().size(), 2);
         Assert.assertEquals(subgraph.getEdgeLayers().get(0).get(0).getTargetId(), Long.valueOf(2L));
         Assert.assertEquals(subgraph.getEdgeLayers().get(1).get(0).getTargetId(), Long.valueOf(3L));
+        Assert.assertTrue(subgraph.getEdgeLayers().stream()
+            .flatMap(List::stream)
+            .noneMatch(edge -> Long.valueOf(4L).equals(edge.getTargetId())));
         Assert.assertNull(assembler.take(1L));
+    }
+
+    @Test
+    public void testAcceptsOutOfOrderResponsesAndIgnoresDuplicates() {
+        LayeredSubgraphAssembler<Long, Integer, Integer> assembler =
+            new LayeredSubgraphAssembler<>();
+        assembler.start(1L, 1, new LocalNeighborhood<>(new ValueVertex<>(1L, 1),
+            java.util.Arrays.asList(new ValueEdge<>(1L, 2L, 1, EdgeDirection.OUT),
+                new ValueEdge<>(1L, 3L, 1, EdgeDirection.OUT)), 7L));
+        Assert.assertTrue(assembler.registerRequest(1L, 2L, 1));
+        Assert.assertTrue(assembler.registerRequest(1L, 3L, 1));
+
+        SubgraphSamplingResponse<Long, Integer, Integer> responseForThree =
+            new SubgraphSamplingResponse<>(1L, 1, neighborhood(3L, 4L, 7L));
+        SubgraphSamplingResponse<Long, Integer, Integer> responseForTwo =
+            new SubgraphSamplingResponse<>(1L, 1, neighborhood(2L, 5L, 7L));
+        Assert.assertTrue(assembler.add(responseForThree));
+        Assert.assertTrue(assembler.add(responseForTwo));
+        Assert.assertFalse(assembler.add(responseForThree));
+
+        Assert.assertEquals(assembler.take(1L).getVertices().keySet(),
+            new java.util.LinkedHashSet<>(java.util.Arrays.asList(1L, 2L, 3L)));
+    }
+
+    @Test
+    public void testKeepsAssembliesIsolatedAndClearRemovesThem() {
+        LayeredSubgraphAssembler<Long, Integer, Integer> assembler =
+            new LayeredSubgraphAssembler<>();
+        assembler.start(1L, 1, neighborhood(1L, 2L, 7L));
+        assembler.start(10L, 1, neighborhood(10L, 11L, 7L));
+
+        Assert.assertTrue(assembler.registerRequest(1L, 2L, 1));
+        Assert.assertTrue(assembler.registerRequest(10L, 11L, 1));
+        Assert.assertTrue(assembler.add(new SubgraphSamplingResponse<>(1L, 1,
+            neighborhood(2L, 3L, 7L))));
+        Assert.assertTrue(assembler.add(new SubgraphSamplingResponse<>(10L, 1,
+            neighborhood(11L, 12L, 7L))));
+        Assert.assertEquals(assembler.take(1L).getRootId(), Long.valueOf(1L));
+        Assert.assertEquals(assembler.take(10L).getRootId(), Long.valueOf(10L));
+
+        assembler.start(20L, 1, neighborhood(20L, 21L, 7L));
+        assembler.clear();
+        Assert.assertNull(assembler.take(20L));
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testRejectsRequestDepthOutsideAssembly() {
+        LayeredSubgraphAssembler<Long, Integer, Integer> assembler =
+            new LayeredSubgraphAssembler<>();
+        assembler.start(1L, 1, neighborhood(1L, 2L, 7L));
+        assembler.registerRequest(1L, 2L, 2);
+    }
+
+    @Test(expectedExceptions = IllegalStateException.class)
+    public void testRejectsResponseForUnrequestedVertex() {
+        LayeredSubgraphAssembler<Long, Integer, Integer> assembler =
+            new LayeredSubgraphAssembler<>();
+        assembler.start(1L, 1, neighborhood(1L, 2L, 7L));
+        assembler.add(new SubgraphSamplingResponse<>(1L, 1, neighborhood(3L, 4L, 7L)));
     }
 
     @Test(expectedExceptions = IllegalArgumentException.class)

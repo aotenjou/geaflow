@@ -21,6 +21,7 @@ package org.apache.geaflow.state.sampling;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -98,6 +99,36 @@ public class DeterministicNeighborSamplerTest {
         Assert.assertEquals(
             DeterministicNeighborSampler.sample(1L, Arrays.asList(out, in), EdgeDirection.BOTH, -1).size(),
             2);
+    }
+
+    @Test
+    public void testIncomingNormalizationDoesNotMutateInputEdge() {
+        IEdge<Long, String> incoming = edge(2L, 1L);
+        incoming.setDirect(EdgeDirection.IN);
+
+        List<IEdge<Long, String>> sampled = DeterministicNeighborSampler.sample(
+            1L, Collections.singletonList(incoming), EdgeDirection.IN, -1);
+
+        Assert.assertEquals(incoming.getSrcId(), Long.valueOf(2L));
+        Assert.assertEquals(incoming.getTargetId(), Long.valueOf(1L));
+        Assert.assertEquals(incoming.getDirect(), EdgeDirection.IN);
+        Assert.assertEquals(sampled.get(0).getSrcId(), Long.valueOf(1L));
+        Assert.assertEquals(sampled.get(0).getTargetId(), Long.valueOf(2L));
+    }
+
+    @Test
+    public void testComparatorTieUsesStableIdFallback() {
+        List<IEdge<Long, String>> edges = Arrays.asList(edge(1L, 3L), edge(1L, 2L));
+
+        List<Long> first = targetIds(DeterministicNeighborSampler.sample(
+            1L, edges, EdgeDirection.OUT, 1, (left, right) -> 0,
+            100L, 17L, 7L));
+        List<Long> second = targetIds(DeterministicNeighborSampler.sample(
+            1L, Arrays.asList(edges.get(1), edges.get(0)), EdgeDirection.OUT, 1,
+            (left, right) -> 0, 100L, 17L, 7L));
+
+        Assert.assertEquals(first, second);
+        Assert.assertEquals(first.size(), 1);
     }
 
     @Test

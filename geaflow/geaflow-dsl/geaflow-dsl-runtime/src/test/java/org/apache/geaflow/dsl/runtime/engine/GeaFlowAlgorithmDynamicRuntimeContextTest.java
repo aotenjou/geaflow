@@ -19,6 +19,7 @@
 
 package org.apache.geaflow.dsl.runtime.engine;
 
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -27,6 +28,7 @@ import static org.mockito.Mockito.when;
 import java.util.Arrays;
 import java.util.Collections;
 import org.apache.geaflow.api.context.RuntimeContext;
+import org.apache.geaflow.api.graph.sampling.SubgraphSamplingSpec;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunction.IncVertexCentricTraversalFuncContext;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunction.TraversalGraphSnapShot;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunction.TraversalHistoricalGraph;
@@ -34,6 +36,7 @@ import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.T
 import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.TraversalVertexQuery;
 import org.apache.geaflow.api.graph.function.vc.base.IncVertexCentricFunction.TemporaryGraph;
 import org.apache.geaflow.common.iterator.CloseableIterator;
+import org.apache.geaflow.common.type.primitive.LongType;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowEdge;
@@ -88,5 +91,52 @@ public class GeaFlowAlgorithmDynamicRuntimeContextTest {
         Assert.assertEquals(neighborhood.getEdges().size(), 1);
         Assert.assertEquals(neighborhood.getSnapshotVersion(), 7L);
         verify(temporaryGraph, never()).getEdges();
+    }
+
+    @Test
+    public void testSamplingSpecPropagatesVersionAndClosesStaticIterator() {
+        IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext = mock(
+            IncVertexCentricTraversalFuncContext.class);
+        TraversalHistoricalGraph<Object, Row, Row> historicalGraph = mock(TraversalHistoricalGraph.class);
+        TraversalGraphSnapShot<Object, Row, Row> snapshot = mock(TraversalGraphSnapShot.class);
+        TraversalVertexQuery<Object, Row> vertexQuery = mock(TraversalVertexQuery.class);
+        TraversalEdgeQuery<Object, Row> edgeQuery = mock(TraversalEdgeQuery.class);
+        RuntimeContext runtimeContext = mock(RuntimeContext.class);
+        CloseableIterator<IEdge<Object, Row>> edgeIterator = mock(CloseableIterator.class);
+        GraphSchema graphSchema = mock(GraphSchema.class);
+
+        RowEdge first = edge(1L, 2L);
+        RowEdge second = edge(1L, 3L);
+        RowEdge third = edge(1L, 4L);
+        when(edgeIterator.hasNext()).thenReturn(true, true, true, false);
+        when(edgeIterator.next()).thenReturn(first, second, third);
+        when(traversalContext.getHistoricalGraph()).thenReturn(historicalGraph);
+        when(historicalGraph.getSnapShot(0L)).thenReturn(snapshot);
+        when(snapshot.vertex()).thenReturn(vertexQuery);
+        when(snapshot.edges()).thenReturn(edgeQuery);
+        when(edgeQuery.getEdges(OutEdgeFilter.getInstance())).thenReturn(edgeIterator);
+        when(traversalContext.getRuntimeContext()).thenReturn(runtimeContext);
+        when(runtimeContext.getWindowId()).thenReturn(7L);
+        doReturn(LongType.INSTANCE).when(graphSchema).getIdType();
+
+        GeaFlowAlgorithmDynamicRuntimeContext context = new GeaFlowAlgorithmDynamicRuntimeContext(
+            new GeaFlowAlgorithmDynamicAggTraversalFunction(graphSchema,
+                mock(AlgorithmUserFunction.class), new Object[0]), traversalContext, graphSchema);
+        RowVertex vertex = mock(RowVertex.class);
+        when(vertex.getId()).thenReturn(1L);
+
+        LocalNeighborhood<Object, Row, Row> neighborhood = context.sampleOneHop(vertex,
+            new SubgraphSamplingSpec(1, 1, EdgeDirection.OUT, 100L, 17L), 9L);
+
+        Assert.assertEquals(neighborhood.getEdges().size(), 1);
+        Assert.assertEquals(neighborhood.getSnapshotVersion(), 7L);
+        Assert.assertEquals(neighborhood.getSamplingVersion(), 9L);
+        verify(edgeIterator).close();
+    }
+
+    private RowEdge edge(long source, long target) {
+        RowEdge edge = new ObjectEdge(source, target, ObjectRow.create(1.0D));
+        edge.setDirect(EdgeDirection.OUT);
+        return edge;
     }
 }

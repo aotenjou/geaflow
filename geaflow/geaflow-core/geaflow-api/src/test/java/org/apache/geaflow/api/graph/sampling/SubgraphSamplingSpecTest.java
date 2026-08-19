@@ -45,6 +45,16 @@ public class SubgraphSamplingSpecTest {
         new SubgraphSamplingSpec(2, 0, EdgeDirection.OUT);
     }
 
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testRejectsFanoutBelowUnlimitedMarker() {
+        new SubgraphSamplingSpec(2, -2, EdgeDirection.OUT);
+    }
+
+    @Test(expectedExceptions = NullPointerException.class)
+    public void testRejectsNullDirection() {
+        new SubgraphSamplingSpec(2, 1, null);
+    }
+
     @Test
     public void testUnlimitedFanoutKeepsPerVertexEdgeBudget() {
         SubgraphSamplingSpec spec = new SubgraphSamplingSpec(2, -1, EdgeDirection.BOTH);
@@ -56,5 +66,10 @@ public class SubgraphSamplingSpecTest {
     @Test(expectedExceptions = IllegalArgumentException.class)
     public void testRejectsInvalidReturnedEdgeBudget() {
         new SubgraphSamplingSpec(2, -1, EdgeDirection.BOTH, 0);
+    }
+
+    @Test(expectedExceptions = IllegalArgumentException.class)
+    public void testRejectsNegativeReturnedEdgeBudget() {
+        new SubgraphSamplingSpec(2, -1, EdgeDirection.BOTH, -1);
     }
 }
