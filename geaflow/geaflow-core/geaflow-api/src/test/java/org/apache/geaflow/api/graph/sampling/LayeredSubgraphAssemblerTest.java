@@ -48,6 +48,8 @@ public class LayeredSubgraphAssemblerTest {
 
         SampledSubgraph<Long, Integer, Integer> subgraph = assembler.take(1L);
         Assert.assertEquals(subgraph.getVertices().size(), 3);
+        Assert.assertEquals(subgraph.getVertices().get(3L).getValue(), Integer.valueOf(3));
+        Assert.assertFalse(subgraph.getVertices().containsKey(4L));
         Assert.assertEquals(subgraph.getEdgeLayers().size(), 2);
         Assert.assertEquals(subgraph.getEdgeLayers().get(0).get(0).getTargetId(), Long.valueOf(2L));
         Assert.assertEquals(subgraph.getEdgeLayers().get(1).get(0).getTargetId(), Long.valueOf(3L));
@@ -132,12 +134,14 @@ public class LayeredSubgraphAssemblerTest {
     @Test
     public void testStructuralEdgeIdentityPreservesCollisionsAndLabels() {
         SampledSubgraph<String, Integer, Integer> subgraph = new SampledSubgraph<>("root", 1L);
-        subgraph.addLayer(java.util.Arrays.asList(
+        LocalNeighborhood<String, Integer, Integer> neighborhood = new LocalNeighborhood<>(
+            new ValueVertex<>("root", 0), java.util.Arrays.asList(
             new ValueLabelEdge<>("a->b", "c", 1, "first"),
             new ValueLabelEdge<>("a", "b->c", 1, "first"),
-            new ValueLabelEdge<>("a", "b->c", 1, "second")));
+            new ValueLabelEdge<>("a", "b->c", 1, "second")), 1L);
+        subgraph.addNeighborhood(0, neighborhood, true);
 
-        Assert.assertEquals(subgraph.getEdgeCount(), 3L);
+        Assert.assertEquals(subgraph.getEdgeLayers().get(0).size(), 3);
     }
 
     @Test
@@ -149,19 +153,21 @@ public class LayeredSubgraphAssemblerTest {
         ValueLabelEdge<Long, String> reciprocal = new ValueLabelEdge<>(2L, 1L, "third", "knows");
 
         SampledSubgraph<Long, Integer, String> subgraph = new SampledSubgraph<>(1L, 1L);
-        subgraph.addLayer(java.util.Arrays.asList(out, inReplica, reciprocal));
+        subgraph.addNeighborhood(0, new LocalNeighborhood<>(new ValueVertex<>(1L, 1),
+            java.util.Arrays.asList(out, inReplica, reciprocal), 1L), true);
 
-        Assert.assertEquals(subgraph.getEdgeCount(), 2L);
+        Assert.assertEquals(subgraph.getEdgeLayers().get(0).size(), 2);
     }
 
     @Test
     public void testLogicalEdgeIdentityPreservesTemporalParallelEdges() {
         SampledSubgraph<Long, Integer, String> subgraph = new SampledSubgraph<>(1L, 1L);
-        subgraph.addLayer(java.util.Arrays.asList(
+        subgraph.addNeighborhood(0, new LocalNeighborhood<>(new ValueVertex<>(1L, 1),
+            java.util.Arrays.asList(
             new ValueLabelTimeEdge<>(1L, 2L, "same", "knows", 10L),
-            new ValueLabelTimeEdge<>(1L, 2L, "same", "knows", 11L)));
+            new ValueLabelTimeEdge<>(1L, 2L, "same", "knows", 11L)), 1L), true);
 
-        Assert.assertEquals(subgraph.getEdgeCount(), 2L);
+        Assert.assertEquals(subgraph.getEdgeLayers().get(0).size(), 2);
     }
 
     private LocalNeighborhood<Long, Integer, Integer> neighborhood(long source, long target,

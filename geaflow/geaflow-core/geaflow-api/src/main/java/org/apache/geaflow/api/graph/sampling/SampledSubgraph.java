@@ -81,15 +81,6 @@ public class SampledSubgraph<K, VV, EV> implements Serializable {
         vertices.put(vertexId, vertex);
     }
 
-    public void addLayer(List<? extends IEdge<K, EV>> edges) {
-        Objects.requireNonNull(edges, "edges");
-        List<IEdge<K, EV>> layer = new ArrayList<>();
-        for (IEdge<K, EV> edge : edges) {
-            addEdge(layer, edge);
-        }
-        edgeLayers.add(layer);
-    }
-
     public void addNeighborhood(int depth, LocalNeighborhood<K, VV, EV> neighborhood,
                                 boolean includeEdges) {
         if (depth < 0) {
@@ -143,10 +134,6 @@ public class SampledSubgraph<K, VV, EV> implements Serializable {
             layers.add(Collections.unmodifiableList(ordered));
         }
         return Collections.unmodifiableList(layers);
-    }
-
-    public long getEdgeCount() {
-        return edgeIdentities.size();
     }
 
     public void validateComplete() {

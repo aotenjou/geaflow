@@ -19,31 +19,28 @@
 
 package org.apache.geaflow.dsl.common.algo;
 
-import org.apache.geaflow.api.graph.sampling.SamplingClock;
-import org.apache.geaflow.api.graph.sampling.SamplingPhase;
+import java.util.Comparator;
+import java.util.List;
 import org.apache.geaflow.api.graph.sampling.SubgraphSamplingSpec;
+import org.apache.geaflow.common.iterator.CloseableIterator;
+import org.apache.geaflow.common.type.IType;
 import org.apache.geaflow.dsl.common.data.Row;
+import org.apache.geaflow.dsl.common.data.RowEdge;
 import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
+import org.apache.geaflow.model.graph.edge.IEdge;
+import org.apache.geaflow.state.sampling.DeterministicNeighborSampler;
 import org.apache.geaflow.state.sampling.LocalNeighborhood;
 
 /** Runtime-facing contract for reusable one-hop sampling. */
 public interface AlgorithmSamplingRuntimeContext<K, M> extends AlgorithmRuntimeContext<K, M> {
 
-    LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex, EdgeDirection direction,
-                                                     int fanout);
-
     default LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
                                                               EdgeDirection direction,
-                                                              int fanout,
-                                                              long maxCandidateEdges) {
-        LocalNeighborhood<Object, Row, Row> neighborhood = sampleOneHop(vertex, direction, fanout);
-        if (neighborhood.getEdges().size() > maxCandidateEdges) {
-            throw new IllegalStateException(String.format(
-                "one-hop sampling edge limit exceeded, vertexId=%s, actual=%s, limit=%s",
-                vertex.getId(), neighborhood.getEdges().size(), maxCandidateEdges));
-        }
-        return neighborhood;
+                                                              int fanout) {
+        return sampleOneHop(vertex, direction, fanout,
+            DeterministicNeighborSampler.DEFAULT_MAX_RETURNED_EDGES, 0L,
+            getSamplingSnapshotVersion());
     }
 
     default LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
@@ -52,26 +49,24 @@ public interface AlgorithmSamplingRuntimeContext<K, M> extends AlgorithmRuntimeC
                                                               long maxReturnedEdges,
                                                               long seed,
                                                               long samplingVersion) {
-        return sampleOneHop(vertex, direction, fanout, maxReturnedEdges);
-    }
-
-    default SamplingClock getSamplingClock(SubgraphSamplingSpec spec, long sessionId,
-                                           long startIterationId) {
-        return SamplingClock.forIteration(getSamplingSnapshotVersion(), sessionId,
-            spec.getHops(), startIterationId, getCurrentIterationId());
+        try (CloseableIterator<RowEdge> iterator = loadStaticEdgesIterator(direction)) {
+            Iterable<RowEdge> edges = () -> iterator;
+            Comparator<Object> comparator = (left, right) ->
+                ((IType) getGraphSchema().getIdType()).compare(left, right);
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            List<IEdge<Object, Row>> sampled = (List) DeterministicNeighborSampler.sample(
+                vertex.getId(), edges, direction, fanout, comparator, maxReturnedEdges,
+                seed, samplingVersion);
+            return new LocalNeighborhood<>(vertex, sampled, getSamplingSnapshotVersion(),
+                samplingVersion);
+        }
     }
 
     default LocalNeighborhood<Object, Row, Row> sampleOneHop(RowVertex vertex,
                                                               SubgraphSamplingSpec spec,
-                                                              SamplingClock requestClock) {
-        if (requestClock.getPhase() != SamplingPhase.REQUEST) {
-            throw new IllegalArgumentException("one-hop sampling requires a request clock");
-        }
-        if (requestClock.getSnapshotVersion() != getSamplingSnapshotVersion()) {
-            throw new IllegalArgumentException("sampling clock does not match runtime snapshot");
-        }
+                                                              long samplingVersion) {
         return sampleOneHop(vertex, spec.getDirection(), spec.getFanout(),
-            spec.getMaxReturnedEdges(), spec.getSeed(), requestClock.getSamplingVersion());
+            spec.getMaxReturnedEdges(), spec.getSeed(), samplingVersion);
     }
 
     long getSamplingSnapshotVersion();

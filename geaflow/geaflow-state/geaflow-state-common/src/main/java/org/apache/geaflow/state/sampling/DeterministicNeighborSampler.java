@@ -36,7 +36,7 @@ import org.apache.geaflow.model.graph.edge.IEdge;
  */
 public final class DeterministicNeighborSampler {
 
-    public static final long DEFAULT_MAX_CANDIDATE_EDGES = 100000L;
+    public static final long DEFAULT_MAX_RETURNED_EDGES = 100000L;
 
     private DeterministicNeighborSampler() {
     }
@@ -46,16 +46,7 @@ public final class DeterministicNeighborSampler {
                                                     EdgeDirection direction,
                                                     int fanout) {
         return sample(vertexId, edges, direction, fanout,
-            Comparator.comparing(String::valueOf), DEFAULT_MAX_CANDIDATE_EDGES, 0L, 0L);
-    }
-
-    public static <K, EV> List<IEdge<K, EV>> sample(K vertexId,
-                                                    Iterable<? extends IEdge<K, EV>> edges,
-                                                    EdgeDirection direction,
-                                                    int fanout,
-                                                    Comparator<K> idComparator,
-                                                    long maxReturnedEdges) {
-        return sample(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges, 0L, 0L);
+            Comparator.comparing(String::valueOf), DEFAULT_MAX_RETURNED_EDGES, 0L, 0L);
     }
 
     public static <K, EV> List<IEdge<K, EV>> sample(K vertexId,
@@ -76,16 +67,7 @@ public final class DeterministicNeighborSampler {
                                                       EdgeDirection direction,
                                                       int fanout) {
         return project(vertexId, edges, direction, fanout,
-            Comparator.comparing(String::valueOf), DEFAULT_MAX_CANDIDATE_EDGES, 0L, 0L);
-    }
-
-    public static <K, EV> List<IEdge<K, EV>> project(K vertexId,
-                                                      Iterable<? extends IEdge<K, EV>> edges,
-                                                      EdgeDirection direction,
-                                                      int fanout,
-                                                      Comparator<K> idComparator,
-                                                      long maxReturnedEdges) {
-        return project(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges, 0L, 0L);
+            Comparator.comparing(String::valueOf), DEFAULT_MAX_RETURNED_EDGES, 0L, 0L);
     }
 
     public static <K, EV> List<IEdge<K, EV>> project(K vertexId,

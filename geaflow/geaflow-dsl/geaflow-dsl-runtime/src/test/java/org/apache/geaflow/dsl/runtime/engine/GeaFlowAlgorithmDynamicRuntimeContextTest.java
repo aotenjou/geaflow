@@ -33,9 +33,7 @@ import org.apache.geaflow.api.graph.function.vc.IncVertexCentricTraversalFunctio
 import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.TraversalEdgeQuery;
 import org.apache.geaflow.api.graph.function.vc.VertexCentricTraversalFunction.TraversalVertexQuery;
 import org.apache.geaflow.api.graph.function.vc.base.IncVertexCentricFunction.TemporaryGraph;
-import org.apache.geaflow.api.graph.sampling.SamplingClock;
-import org.apache.geaflow.api.graph.sampling.SamplingPhase;
-import org.apache.geaflow.api.graph.sampling.SubgraphSamplingSpec;
+import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowEdge;
@@ -44,36 +42,13 @@ import org.apache.geaflow.dsl.common.types.GraphSchema;
 import org.apache.geaflow.dsl.common.data.impl.types.ObjectEdge;
 import org.apache.geaflow.dsl.common.data.impl.ObjectRow;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
+import org.apache.geaflow.model.graph.edge.IEdge;
+import org.apache.geaflow.state.pushdown.filter.OutEdgeFilter;
 import org.apache.geaflow.state.sampling.LocalNeighborhood;
 import org.testng.Assert;
 import org.testng.annotations.Test;
 
 public class GeaFlowAlgorithmDynamicRuntimeContextTest {
-
-    @Test
-    public void testSamplingContextMapsRuntimeClock() {
-        IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> traversalContext = mock(
-            IncVertexCentricTraversalFuncContext.class);
-        TraversalHistoricalGraph<Object, Row, Row> historicalGraph = mock(TraversalHistoricalGraph.class);
-        TraversalGraphSnapShot<Object, Row, Row> snapshot = mock(TraversalGraphSnapShot.class);
-        RuntimeContext runtimeContext = mock(RuntimeContext.class);
-        when(traversalContext.getHistoricalGraph()).thenReturn(historicalGraph);
-        when(historicalGraph.getSnapShot(0L)).thenReturn(snapshot);
-        when(snapshot.vertex()).thenReturn(mock(TraversalVertexQuery.class));
-        when(snapshot.edges()).thenReturn(mock(TraversalEdgeQuery.class));
-        when(traversalContext.getRuntimeContext()).thenReturn(runtimeContext);
-        when(runtimeContext.getWindowId()).thenReturn(7L);
-        when(traversalContext.getIterationId()).thenReturn(3L);
-        GeaFlowAlgorithmDynamicRuntimeContext context = new GeaFlowAlgorithmDynamicRuntimeContext(
-            new GeaFlowAlgorithmDynamicAggTraversalFunction(mock(GraphSchema.class),
-                mock(AlgorithmUserFunction.class), new Object[0]), traversalContext,
-            mock(GraphSchema.class));
-        SubgraphSamplingSpec spec = new SubgraphSamplingSpec(2, 2, EdgeDirection.OUT, 9L, 5L);
-
-        SamplingClock current = context.getSamplingClock(spec, 11L, 1L);
-        Assert.assertEquals(current.getHop(), 1);
-        Assert.assertEquals(current.getPhase(), SamplingPhase.COMMIT_AND_REQUEST);
-    }
 
     @Test
     public void testSamplingUsesMaterializedSnapshotOnly() {
@@ -85,14 +60,18 @@ public class GeaFlowAlgorithmDynamicRuntimeContextTest {
         TraversalEdgeQuery<Object, Row> edgeQuery = mock(TraversalEdgeQuery.class);
         RuntimeContext runtimeContext = mock(RuntimeContext.class);
         TemporaryGraph<Object, Row, Row> temporaryGraph = mock(TemporaryGraph.class);
+        CloseableIterator<IEdge<Object, Row>> edgeIterator = mock(CloseableIterator.class);
 
         RowEdge edge = new ObjectEdge(1L, 2L, ObjectRow.create(1.0D));
         edge.setDirect(EdgeDirection.OUT);
+        when(edgeIterator.hasNext()).thenReturn(true, false);
+        when(edgeIterator.next()).thenReturn(edge);
         when(traversalContext.getHistoricalGraph()).thenReturn(historicalGraph);
         when(historicalGraph.getSnapShot(0L)).thenReturn(snapshot);
         when(snapshot.vertex()).thenReturn(vertexQuery);
         when(snapshot.edges()).thenReturn(edgeQuery);
         when(edgeQuery.getOutEdges()).thenReturn(Collections.singletonList(edge));
+        when(edgeQuery.getEdges(OutEdgeFilter.getInstance())).thenReturn(edgeIterator);
         when(traversalContext.getRuntimeContext()).thenReturn(runtimeContext);
         when(runtimeContext.getWindowId()).thenReturn(7L);
         when(traversalContext.getTemporaryGraph()).thenReturn(temporaryGraph);

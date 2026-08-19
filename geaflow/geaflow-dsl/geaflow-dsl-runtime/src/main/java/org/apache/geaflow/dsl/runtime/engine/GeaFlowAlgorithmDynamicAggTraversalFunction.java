@@ -33,7 +33,6 @@ import org.apache.geaflow.api.function.iterator.RichIteratorFunction;
 import org.apache.geaflow.api.graph.function.vc.IncVertexCentricAggTraversalFunction;
 import org.apache.geaflow.common.config.keys.FrameworkConfigKeys;
 import org.apache.geaflow.dsl.common.algo.AlgorithmUserFunction;
-import org.apache.geaflow.dsl.common.algo.SubgraphSamplingAlgorithm;
 import org.apache.geaflow.dsl.common.data.Row;
 import org.apache.geaflow.dsl.common.data.RowVertex;
 import org.apache.geaflow.dsl.common.types.GraphSchema;
@@ -94,11 +93,6 @@ public class GeaFlowAlgorithmDynamicAggTraversalFunction
         IncVertexCentricTraversalFuncContext<Object, Row, Row, Object, Row> vertexCentricFuncContext) {
         this.traversalContext = vertexCentricFuncContext;
         this.materializeInFinish = traversalContext.getRuntimeContext().getConfiguration().getBoolean(FrameworkConfigKeys.UDF_MATERIALIZE_GRAPH_IN_FINISH);
-        // Sampling must read a stable window snapshot. Apply the window delta before the first
-        // sampling iteration, then refresh only vertices triggered by that delta.
-        if (userFunction instanceof SubgraphSamplingAlgorithm) {
-            this.materializeInFinish = false;
-        }
         this.algorithmCtx = new GeaFlowAlgorithmDynamicRuntimeContext(this, traversalContext,
             graphSchema);
         this.initVertices = new HashSet<>();
@@ -268,7 +262,6 @@ public class GeaFlowAlgorithmDynamicAggTraversalFunction
 
     @Override
     public void initIteration(long iterationId) {
-        userFunction.initIteration(iterationId);
     }
 
     @Override

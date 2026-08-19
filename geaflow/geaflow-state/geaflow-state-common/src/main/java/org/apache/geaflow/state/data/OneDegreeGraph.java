@@ -47,5 +47,5 @@ public class OneDegreeGraph<K, VV, EV> implements Serializable {
     public CloseableIterator<IEdge<K, EV>> getEdgeIterator() {
         return edgeIterator;
     }
-
 }
+

@@ -129,10 +129,10 @@ public class DeterministicNeighborSamplerTest {
     }
 
     @Test(expectedExceptions = IllegalStateException.class)
-    public void testRejectsCandidateEdgeOverflow() {
+    public void testRejectsReturnedEdgeOverflow() {
         DeterministicNeighborSampler.sample(1L,
             Arrays.asList(edge(1L, 2L), edge(1L, 3L)), EdgeDirection.OUT, -1,
-            Long::compare, 1);
+            Long::compare, 1, 0L, 0L);
     }
 
     private static IEdge<Long, String> edge(long source, long target) {

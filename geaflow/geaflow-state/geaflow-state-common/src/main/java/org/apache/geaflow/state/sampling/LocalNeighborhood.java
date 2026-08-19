@@ -95,13 +95,6 @@ public class LocalNeighborhood<K, VV, EV> implements Serializable {
 
     public LocalNeighborhood<K, VV, EV> project(EdgeDirection direction, int fanout,
                                                 Comparator<K> idComparator,
-                                                long maxReturnedEdges) {
-        return new LocalNeighborhood<>(vertex, DeterministicNeighborSampler.project(vertex.getId(),
-            edges, direction, fanout, idComparator, maxReturnedEdges), snapshotVersion, samplingVersion);
-    }
-
-    public LocalNeighborhood<K, VV, EV> project(EdgeDirection direction, int fanout,
-                                                Comparator<K> idComparator,
                                                 long maxReturnedEdges,
                                                 long seed) {
         return new LocalNeighborhood<>(vertex, DeterministicNeighborSampler.project(vertex.getId(),

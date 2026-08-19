@@ -39,20 +39,6 @@ import org.testng.annotations.Test;
 public class GeaFlowAlgorithmDynamicAggTraversalFunctionTest {
 
     @Test
-    public void testForwardsIterationLifecycle() {
-        AlgorithmUserFunction<Object, Object> userFunction = mock(AlgorithmUserFunction.class);
-        GeaFlowAlgorithmDynamicAggTraversalFunction function =
-            new GeaFlowAlgorithmDynamicAggTraversalFunction(mock(GraphSchema.class),
-                userFunction, new Object[0]);
-
-        function.initIteration(3L);
-        function.finishIteration(3L);
-
-        verify(userFunction).initIteration(3L);
-        verify(userFunction).finishIteration(3L);
-    }
-
-    @Test
     public void testEvolvePersistsNeighborhoodChangeVersion() throws Exception {
         GeaFlowAlgorithmDynamicAggTraversalFunction function =
             new GeaFlowAlgorithmDynamicAggTraversalFunction(mock(GraphSchema.class),
