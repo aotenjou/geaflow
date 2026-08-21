@@ -21,6 +21,7 @@ package org.apache.geaflow.dsl.common.algo;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 import org.apache.geaflow.api.graph.sampling.SubgraphSamplingSpec;
 import org.apache.geaflow.common.iterator.CloseableIterator;
 import org.apache.geaflow.common.type.IType;
@@ -51,12 +52,14 @@ public interface AlgorithmSamplingRuntimeContext<K, M> extends AlgorithmRuntimeC
                                                               long samplingVersion) {
         try (CloseableIterator<RowEdge> iterator = loadStaticEdgesIterator(direction)) {
             Iterable<RowEdge> edges = () -> iterator;
-            Comparator<Object> comparator = (left, right) ->
-                ((IType) getGraphSchema().getIdType()).compare(left, right);
+            @SuppressWarnings({"unchecked", "rawtypes"})
+            IType<Object> idType = (IType) getGraphSchema().getIdType();
+            Comparator<Object> comparator = idType::compare;
+            Function<Object, byte[]> idEncoder = idType::serialize;
             @SuppressWarnings({"unchecked", "rawtypes"})
             List<IEdge<Object, Row>> sampled = (List) DeterministicNeighborSampler.sample(
                 vertex.getId(), edges, direction, fanout, comparator, maxReturnedEdges,
-                seed, samplingVersion);
+                seed, samplingVersion, idEncoder);
             return new LocalNeighborhood<>(vertex, sampled, getSamplingSnapshotVersion(),
                 samplingVersion);
         }

@@ -145,6 +145,13 @@ public class SubgraphSamplingEndToEndTest {
         return new ValueEdge<>(source, target, 1, EdgeDirection.OUT);
     }
 
+    private static byte[] longBytes(long value) {
+        return new byte[]{
+            (byte) (value >>> 56), (byte) (value >>> 48), (byte) (value >>> 40),
+            (byte) (value >>> 32), (byte) (value >>> 24), (byte) (value >>> 16),
+            (byte) (value >>> 8), (byte) value};
+    }
+
     private static final class SamplingDriver {
 
         private final RecordingGraph graph;
@@ -277,7 +284,8 @@ public class SubgraphSamplingEndToEndTest {
             sampleReads.add(vertexId + "@" + depth);
             List<IEdge<Long, Integer>> sampled = DeterministicNeighborSampler.sample(
                 vertexId, adjacency.get(vertexId), spec.getDirection(), spec.getFanout(),
-                Long::compare, spec.getMaxReturnedEdges(), spec.getSeed(), SAMPLING_VERSION);
+                Long::compare, spec.getMaxReturnedEdges(), spec.getSeed(), SAMPLING_VERSION,
+                SubgraphSamplingEndToEndTest::longBytes);
             return neighborhood(vertexId, sampled);
         }
 

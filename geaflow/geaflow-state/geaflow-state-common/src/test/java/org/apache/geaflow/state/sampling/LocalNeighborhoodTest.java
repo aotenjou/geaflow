@@ -38,7 +38,7 @@ public class LocalNeighborhoodTest {
             Arrays.asList(edge(1L, 2L), edge(1L, 3L)), 7L, 11L);
 
         LocalNeighborhood<Long, Integer, Integer> projected = neighborhood.project(
-            EdgeDirection.OUT, 1, Long::compare, 100L, 17L);
+            EdgeDirection.OUT, 1, Long::compare, 100L, 17L, LocalNeighborhoodTest::longBytes);
 
         Assert.assertEquals(projected.getEdges().size(), 1);
         Assert.assertEquals(projected.getSnapshotVersion(), 7L);
@@ -91,5 +91,12 @@ public class LocalNeighborhoodTest {
 
     private IEdge<Long, Integer> edge(long source, long target) {
         return new ValueEdge<>(source, target, 1, EdgeDirection.OUT);
+    }
+
+    private static byte[] longBytes(long value) {
+        return new byte[]{
+            (byte) (value >>> 56), (byte) (value >>> 48), (byte) (value >>> 40),
+            (byte) (value >>> 32), (byte) (value >>> 24), (byte) (value >>> 16),
+            (byte) (value >>> 8), (byte) value};
     }
 }

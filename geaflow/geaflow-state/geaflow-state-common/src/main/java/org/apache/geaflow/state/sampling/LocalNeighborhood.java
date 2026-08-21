@@ -25,6 +25,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
 import org.apache.geaflow.model.graph.edge.IEdge;
 import org.apache.geaflow.model.graph.vertex.IVertex;
@@ -87,18 +88,23 @@ public class LocalNeighborhood<K, VV, EV> implements Serializable {
     /**
      * Create a bounded view of this already direction-filtered neighborhood.
      */
-    public LocalNeighborhood<K, VV, EV> project(EdgeDirection direction, int fanout) {
+    public LocalNeighborhood<K, VV, EV> project(EdgeDirection direction, int fanout,
+                                                Comparator<K> idComparator,
+                                                Function<? super K, byte[]> idEncoder) {
         return new LocalNeighborhood<>(vertex,
-            DeterministicNeighborSampler.project(vertex.getId(), edges, direction, fanout),
+            DeterministicNeighborSampler.project(vertex.getId(), edges, direction, fanout,
+                idComparator, idEncoder),
             snapshotVersion, samplingVersion);
     }
 
     public LocalNeighborhood<K, VV, EV> project(EdgeDirection direction, int fanout,
                                                 Comparator<K> idComparator,
                                                 long maxReturnedEdges,
-                                                long seed) {
+                                                long seed,
+                                                Function<? super K, byte[]> idEncoder) {
         return new LocalNeighborhood<>(vertex, DeterministicNeighborSampler.project(vertex.getId(),
-            edges, direction, fanout, idComparator, maxReturnedEdges, seed, samplingVersion),
+            edges, direction, fanout, idComparator, maxReturnedEdges, seed, samplingVersion,
+            idEncoder),
             snapshotVersion, samplingVersion);
     }
 }

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.PriorityQueue;
+import java.util.function.Function;
 import org.apache.geaflow.model.graph.IGraphElementWithLabelField;
 import org.apache.geaflow.model.graph.IGraphElementWithTimeField;
 import org.apache.geaflow.model.graph.edge.EdgeDirection;
@@ -33,6 +34,7 @@ import org.apache.geaflow.model.graph.edge.IEdge;
 
 /**
  * Storage-independent seeded one-hop neighbor sampling.
+ * The supplied ID encoder must return a stable, canonical byte representation across workers.
  */
 public final class DeterministicNeighborSampler {
 
@@ -44,9 +46,11 @@ public final class DeterministicNeighborSampler {
     public static <K, EV> List<IEdge<K, EV>> sample(K vertexId,
                                                     Iterable<? extends IEdge<K, EV>> edges,
                                                     EdgeDirection direction,
-                                                    int fanout) {
-        return sample(vertexId, edges, direction, fanout,
-            Comparator.comparing(String::valueOf), DEFAULT_MAX_RETURNED_EDGES, 0L, 0L);
+                                                    int fanout,
+                                                    Comparator<K> idComparator,
+                                                    Function<? super K, byte[]> idEncoder) {
+        return sample(vertexId, edges, direction, fanout, idComparator,
+            DEFAULT_MAX_RETURNED_EDGES, 0L, 0L, idEncoder);
     }
 
     public static <K, EV> List<IEdge<K, EV>> sample(K vertexId,
@@ -56,18 +60,21 @@ public final class DeterministicNeighborSampler {
                                                     Comparator<K> idComparator,
                                                     long maxReturnedEdges,
                                                     long seed,
-                                                    long samplingVersion) {
+                                                    long samplingVersion,
+                                                    Function<? super K, byte[]> idEncoder) {
         return select(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges,
-            seed, samplingVersion, true);
+            seed, samplingVersion, idEncoder, true);
     }
 
     /** Project an already direction-filtered local neighborhood to a smaller fanout. */
     public static <K, EV> List<IEdge<K, EV>> project(K vertexId,
                                                       Iterable<? extends IEdge<K, EV>> edges,
                                                       EdgeDirection direction,
-                                                      int fanout) {
-        return project(vertexId, edges, direction, fanout,
-            Comparator.comparing(String::valueOf), DEFAULT_MAX_RETURNED_EDGES, 0L, 0L);
+                                                      int fanout,
+                                                      Comparator<K> idComparator,
+                                                      Function<? super K, byte[]> idEncoder) {
+        return project(vertexId, edges, direction, fanout, idComparator,
+            DEFAULT_MAX_RETURNED_EDGES, 0L, 0L, idEncoder);
     }
 
     public static <K, EV> List<IEdge<K, EV>> project(K vertexId,
@@ -77,9 +84,10 @@ public final class DeterministicNeighborSampler {
                                                       Comparator<K> idComparator,
                                                       long maxReturnedEdges,
                                                       long seed,
-                                                      long samplingVersion) {
+                                                      long samplingVersion,
+                                                      Function<? super K, byte[]> idEncoder) {
         return select(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges,
-            seed, samplingVersion, false);
+            seed, samplingVersion, idEncoder, false);
     }
 
     private static <K, EV> List<IEdge<K, EV>> select(K vertexId,
@@ -90,11 +98,14 @@ public final class DeterministicNeighborSampler {
                                                       long maxReturnedEdges,
                                                       long seed,
                                                       long samplingVersion,
+                                                      Function<? super K, byte[]> idEncoder,
                                                       boolean filterAndNormalize) {
-        validate(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges);
+        validate(vertexId, edges, direction, fanout, idComparator, maxReturnedEdges, idEncoder);
+        long vertexHash = hashId(vertexId, idEncoder);
         Comparator<NeighborGroup<K, EV>> rankComparator = (left, right) -> {
             int result = Long.compareUnsigned(left.score, right.score);
-            return result != 0 ? result : compareIds(left.neighborId, right.neighborId, idComparator);
+            return result != 0 ? result
+                : compareIds(left.neighborId, right.neighborId, idComparator, idEncoder);
         };
         Map<K, NeighborGroup<K, EV>> selected = new HashMap<>();
         PriorityQueue<NeighborGroup<K, EV>> worstFirst =
@@ -106,7 +117,10 @@ public final class DeterministicNeighborSampler {
                 continue;
             }
             IEdge<K, EV> edge = filterAndNormalize ? normalize(sourceEdge) : sourceEdge;
-            K neighborId = Objects.requireNonNull(neighborId(vertexId, edge), "neighborId");
+            K neighborId = neighborId(vertexId, edge);
+            if (neighborId == null) {
+                continue;
+            }
             NeighborGroup<K, EV> group = selected.get(neighborId);
             if (group != null) {
                 group.edges.add(edge);
@@ -114,7 +128,8 @@ public final class DeterministicNeighborSampler {
             }
 
             group = new NeighborGroup<>(neighborId,
-                sampleScore(seed, samplingVersion, vertexId, direction, neighborId), edge);
+                sampleScore(seed, samplingVersion, vertexHash, direction,
+                    hashId(neighborId, idEncoder)), edge);
             if (fanout < 0 || selected.size() < fanout) {
                 selected.put(neighborId, group);
                 if (worstFirst != null) {
@@ -132,7 +147,7 @@ public final class DeterministicNeighborSampler {
         groups.sort(rankComparator);
         List<IEdge<K, EV>> result = new ArrayList<>();
         for (NeighborGroup<K, EV> group : groups) {
-            group.edges.sort((left, right) -> compareEdges(left, right, idComparator));
+            group.edges.sort((left, right) -> compareEdges(left, right, idComparator, idEncoder));
             result.addAll(group.edges);
             if (result.size() > maxReturnedEdges) {
                 throw new IllegalStateException(String.format(
@@ -144,11 +159,13 @@ public final class DeterministicNeighborSampler {
     }
 
     private static void validate(Object vertexId, Iterable<?> edges, EdgeDirection direction,
-                                 int fanout, Comparator<?> idComparator, long maxReturnedEdges) {
+                                 int fanout, Comparator<?> idComparator, long maxReturnedEdges,
+                                 Function<?, byte[]> idEncoder) {
         Objects.requireNonNull(vertexId, "vertexId");
         Objects.requireNonNull(edges, "edges");
         Objects.requireNonNull(direction, "direction");
         Objects.requireNonNull(idComparator, "idComparator");
+        Objects.requireNonNull(idEncoder, "idEncoder");
         if (fanout == 0 || fanout < -1) {
             throw new IllegalArgumentException("fanout must be -1 or greater than zero");
         }
@@ -166,8 +183,8 @@ public final class DeterministicNeighborSampler {
             return edge;
         }
         IEdge<K, EV> reversed = edge.reverse();
-        // Direction remains the sampling-side marker; endpoints are restored to logical order.
-        reversed.setDirect(edge.getDirect());
+        // The reversed endpoints now represent the logical outgoing direction.
+        reversed.setDirect(EdgeDirection.OUT);
         return reversed;
     }
 
@@ -178,23 +195,26 @@ public final class DeterministicNeighborSampler {
         if (Objects.equals(vertexId, edge.getTargetId())) {
             return edge.getSrcId();
         }
-        return edge.getTargetId();
+        return null;
     }
 
-    private static long sampleScore(long seed, long samplingVersion, Object vertexId,
-                                    EdgeDirection direction, Object neighborId) {
+    private static long sampleScore(long seed, long samplingVersion, long vertexHash,
+                                    EdgeDirection direction, long neighborHash) {
         long value = mix64(seed) ^ Long.rotateLeft(mix64(samplingVersion), 11);
-        value ^= Long.rotateLeft(stableHash(vertexId), 23);
+        value ^= Long.rotateLeft(vertexHash, 23);
         value ^= Long.rotateLeft(mix64(direction.ordinal()), 37);
-        value ^= Long.rotateLeft(stableHash(neighborId), 47);
+        value ^= Long.rotateLeft(neighborHash, 47);
         return mix64(value);
     }
 
-    private static long stableHash(Object value) {
-        String text = value.getClass().getName() + ':' + value;
+    private static <K> long hashId(K value, Function<? super K, byte[]> idEncoder) {
+        return stableHash(Objects.requireNonNull(idEncoder.apply(value), "idEncoder result"));
+    }
+
+    private static long stableHash(byte[] value) {
         long hash = 0xcbf29ce484222325L;
-        for (int i = 0; i < text.length(); i++) {
-            hash ^= text.charAt(i);
+        for (byte current : value) {
+            hash ^= current & 0xffL;
             hash *= 0x100000001b3L;
         }
         return mix64(hash);
@@ -206,16 +226,20 @@ public final class DeterministicNeighborSampler {
         return value ^ (value >>> 31);
     }
 
-    private static <K> int compareIds(K left, K right, Comparator<K> idComparator) {
+    private static <K> int compareIds(K left, K right, Comparator<K> idComparator,
+                                      Function<? super K, byte[]> idEncoder) {
         int result = idComparator.compare(left, right);
-        return result != 0 ? result : String.valueOf(left).compareTo(String.valueOf(right));
+        return result != 0 ? result : compareBytes(
+            Objects.requireNonNull(idEncoder.apply(left), "idEncoder result"),
+            Objects.requireNonNull(idEncoder.apply(right), "idEncoder result"));
     }
 
     private static <K, EV> int compareEdges(IEdge<K, EV> left, IEdge<K, EV> right,
-                                            Comparator<K> idComparator) {
-        int result = compareIds(left.getSrcId(), right.getSrcId(), idComparator);
+                                            Comparator<K> idComparator,
+                                            Function<? super K, byte[]> idEncoder) {
+        int result = compareIds(left.getSrcId(), right.getSrcId(), idComparator, idEncoder);
         if (result == 0) {
-            result = compareIds(left.getTargetId(), right.getTargetId(), idComparator);
+            result = compareIds(left.getTargetId(), right.getTargetId(), idComparator, idEncoder);
         }
         if (result == 0) {
             result = left.getDirect().compareTo(right.getDirect());
@@ -230,6 +254,17 @@ public final class DeterministicNeighborSampler {
             result = String.valueOf(left.getValue()).compareTo(String.valueOf(right.getValue()));
         }
         return result;
+    }
+
+    private static int compareBytes(byte[] left, byte[] right) {
+        int length = Math.min(left.length, right.length);
+        for (int i = 0; i < length; i++) {
+            int result = Integer.compare(left[i] & 0xff, right[i] & 0xff);
+            if (result != 0) {
+                return result;
+            }
+        }
+        return Integer.compare(left.length, right.length);
     }
 
     private static String labelOf(IEdge<?, ?> edge) {

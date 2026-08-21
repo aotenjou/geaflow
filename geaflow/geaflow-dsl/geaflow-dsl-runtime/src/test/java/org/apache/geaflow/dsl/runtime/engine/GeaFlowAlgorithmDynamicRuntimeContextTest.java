@@ -64,6 +64,7 @@ public class GeaFlowAlgorithmDynamicRuntimeContextTest {
         RuntimeContext runtimeContext = mock(RuntimeContext.class);
         TemporaryGraph<Object, Row, Row> temporaryGraph = mock(TemporaryGraph.class);
         CloseableIterator<IEdge<Object, Row>> edgeIterator = mock(CloseableIterator.class);
+        GraphSchema graphSchema = mock(GraphSchema.class);
 
         RowEdge edge = new ObjectEdge(1L, 2L, ObjectRow.create(1.0D));
         edge.setDirect(EdgeDirection.OUT);
@@ -79,10 +80,11 @@ public class GeaFlowAlgorithmDynamicRuntimeContextTest {
         when(runtimeContext.getWindowId()).thenReturn(7L);
         when(traversalContext.getTemporaryGraph()).thenReturn(temporaryGraph);
         when(temporaryGraph.getEdges()).thenReturn(Arrays.asList(edge));
+        doReturn(LongType.INSTANCE).when(graphSchema).getIdType();
 
         GeaFlowAlgorithmDynamicRuntimeContext context = new GeaFlowAlgorithmDynamicRuntimeContext(
-            new GeaFlowAlgorithmDynamicAggTraversalFunction(mock(GraphSchema.class),
-                mock(AlgorithmUserFunction.class), new Object[0]), traversalContext, mock(GraphSchema.class));
+            new GeaFlowAlgorithmDynamicAggTraversalFunction(graphSchema,
+                mock(AlgorithmUserFunction.class), new Object[0]), traversalContext, graphSchema);
         RowVertex vertex = mock(RowVertex.class);
         when(vertex.getId()).thenReturn(1L);
 
