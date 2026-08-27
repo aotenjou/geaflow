@@ -27,11 +27,11 @@ import org.testng.annotations.Test;
 public class TemporaryGraphCacheTest {
 
     @Test
-    public void testEdgeTriggersSourceAndTargetVertices() {
+    public void testEdgeTriggersSourceVertexOnly() {
         TemporaryGraphCache<Long, Integer, Integer> cache = new TemporaryGraphCache<>();
         cache.addEdge(new ValueEdge<>(1L, 2L, 1, EdgeDirection.OUT));
 
         Assert.assertTrue(cache.getAllEvolveVId().contains(1L));
-        Assert.assertTrue(cache.getAllEvolveVId().contains(2L));
+        Assert.assertFalse(cache.getAllEvolveVId().contains(2L));
     }
 }
