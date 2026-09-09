@@ -22,8 +22,8 @@
  *
  * <p>IDs in these objects are opaque values supplied by callers. This package does not generate
  * IDs. Use {@code sameIdentityAs} for identity comparisons and {@code equals} when complete value
- * equality is required. Evidence identity excludes evidenceId, text, scores and ranks so
- * multi-channel candidates can be merged; its nested references are compared recursively.</p>
+ * equality is required. Evidence identity uses nested references when present, and falls back to
+ * evidenceId or text when no references are available; scores and ranks are ignored.</p>
  *
  * <p>JSON uses explicit camelCase field names. Optional fields may be added only additively; unknown
  * fields are ignored, null optional scalars are omitted, and collection fields use empty arrays or
@@ -46,4 +46,3 @@
 package org.apache.geaflow.ai.retrieval.model;
 
 import org.apache.geaflow.ai.retrieval.codec.RetrievalModelJson;
-

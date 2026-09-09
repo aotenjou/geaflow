@@ -36,8 +36,9 @@ import org.apache.geaflow.ai.retrieval.validation.RetrievalModelValidationExcept
  * Immutable retrieval evidence with optional payload references and multi-channel scores.
  *
  * <p>Complete value equality includes presentation, provenance, and ranking fields. Identity
- * comparison intentionally uses only the evidence kind and nested reference identities, allowing
- * candidates from different retrieval channels to be merged without losing their scores.</p>
+ * comparison uses the evidence kind and nested reference identities, allowing candidates from
+ * different retrieval channels to be merged without losing their scores. When no references are
+ * available, evidenceId or text provides the fallback identity.</p>
  */
 public final class Evidence {
 
@@ -140,11 +141,27 @@ public final class Evidence {
     }
 
     public boolean sameIdentityAs(Evidence other) {
-        return this == other || other != null && kind == other.kind
-            && sameMultiset(getChunks(), other.getChunks(), TextChunk::sameIdentityAs)
-            && sameMultiset(getEntities(), other.getEntities(), EntityRef::sameIdentityAs)
-            && sameMultiset(getPaths(), other.getPaths(), GraphPathRef::sameIdentityAs)
-            && sameMultiset(getSources(), other.getSources(), SourceRef::sameIdentityAs);
+        if (this == other) {
+            return true;
+        }
+        if (other == null || kind != other.kind) {
+            return false;
+        }
+        if (hasReferences() || other.hasReferences()) {
+            return sameMultiset(getChunks(), other.getChunks(), TextChunk::sameIdentityAs)
+                && sameMultiset(getEntities(), other.getEntities(), EntityRef::sameIdentityAs)
+                && sameMultiset(getPaths(), other.getPaths(), GraphPathRef::sameIdentityAs)
+                && sameMultiset(getSources(), other.getSources(), SourceRef::sameIdentityAs);
+        }
+        if (evidenceId != null && other.evidenceId != null) {
+            return evidenceId.equals(other.evidenceId);
+        }
+        return text != null && other.text != null && text.equals(other.text);
+    }
+
+    private boolean hasReferences() {
+        return !getChunks().isEmpty() || !getEntities().isEmpty()
+            || !getPaths().isEmpty() || !getSources().isEmpty();
     }
 
     private static <T> boolean sameMultiset(List<T> first, List<T> second,

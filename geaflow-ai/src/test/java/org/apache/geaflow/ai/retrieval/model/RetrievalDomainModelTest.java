@@ -280,16 +280,25 @@ Assertions.assertEquals(document.hashCode(), copy.hashCode());
     }
 
     @Test
-    public void emptyEvidenceIsOnlyIdentityEquivalentWhenStructureMatches() {
+    public void emptyEvidenceFallsBackToStableIdentityFields() {
         Evidence first = new Evidence("e1", EvidenceKind.CHUNK, null, null, null, null,
             null, null, null, null);
         Evidence second = new Evidence("e2", EvidenceKind.CHUNK, "different text", null,
             null, null, null, null, null, 1);
         Evidence otherKind = new Evidence("e3", EvidenceKind.ENTITY, null, null, null, null,
             null, null, null, null);
-        Assertions.assertTrue(first.sameIdentityAs(second));
+        Assertions.assertFalse(first.sameIdentityAs(second));
         Assertions.assertFalse(first.sameIdentityAs(otherKind));
         Assertions.assertNotEquals(first, second);
+
+        Assertions.assertTrue(first.sameIdentityAs(new Evidence("e1", EvidenceKind.CHUNK,
+            "different text", null, null, null, null, null, null, null)));
+        Assertions.assertTrue(new Evidence(null, EvidenceKind.CHUNK, "same text", null, null,
+            null, null, null, null, null).sameIdentityAs(new Evidence(null, EvidenceKind.CHUNK,
+            "same text", null, null, null, null, null, null, null)));
+        Assertions.assertFalse(new Evidence(null, EvidenceKind.CHUNK, null, null, null, null,
+            null, null, null, null).sameIdentityAs(new Evidence(null, EvidenceKind.CHUNK, null,
+            null, null, null, null, null, null, null)));
     }
 
     @Test
