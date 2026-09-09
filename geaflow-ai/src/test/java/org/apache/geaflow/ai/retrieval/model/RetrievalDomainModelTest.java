@@ -274,7 +274,9 @@ public class RetrievalDomainModelTest {
             "other title", "uri", "hash");
         Assertions.assertTrue(document.sameIdentityAs(changedTitle));
         Assertions.assertNotEquals(document, changedTitle);
-        Assertions.assertEquals(document.hashCode(), document.hashCode());
+SourceDocument copy = new SourceDocument("d", "set", "v1", "dev", "title", "uri", "hash");
+Assertions.assertEquals(document, copy);
+Assertions.assertEquals(document.hashCode(), copy.hashCode());
     }
 
     @Test
